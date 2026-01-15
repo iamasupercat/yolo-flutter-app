@@ -1249,7 +1249,9 @@ class YOLOView @JvmOverloads constructor(
                         paint.strokeWidth = BOX_LINE_WIDTH
 
                         // Draw rotated rectangle (polygon) using path
+                        // toPolygon() returns normalized coordinates (0-1), so we need to scale them
                         val polygon = obbRes.box.toPolygon().map { pt ->
+                            // Scale normalized coordinates to view coordinates
                             var x = pt.x * scaledW + dx
                             val y = pt.y * scaledH + dy
                             
