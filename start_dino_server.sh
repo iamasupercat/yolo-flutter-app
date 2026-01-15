@@ -38,14 +38,28 @@ echo "  서버 중지: kill $SERVER_PID"
 echo ""
 
 # 서버가 시작될 때까지 대기
-sleep 3
+echo "  서버 시작 대기 중..."
+for i in {1..10}; do
+    sleep 1
+    if curl -s http://localhost:5001/health >/dev/null 2>&1; then
+        echo "✅ 서버가 정상적으로 실행 중입니다"
+        echo "  Health check: http://localhost:5001/health"
+        curl -s http://localhost:5001/health | python3 -m json.tool 2>/dev/null || curl -s http://localhost:5001/health
+        echo ""
+        exit 0
+    fi
+    echo -n "."
+done
+echo ""
 
-# 서버 상태 확인
-if lsof -Pi :5001 -sTCP:LISTEN -t >/dev/null ; then
+# 최종 확인
+if curl -s http://localhost:5001/health >/dev/null 2>&1; then
     echo "✅ 서버가 정상적으로 실행 중입니다"
     exit 0
 else
     echo "⚠️  서버 시작 실패. 로그를 확인하세요: dino_server.log"
+    echo "  프로세스가 실행 중인지 확인: ps aux | grep dino_server"
+    echo "  포트 확인: lsof -i :5001"
     exit 1
 fi
 

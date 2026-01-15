@@ -43,7 +43,18 @@ build/
 **/*.mlmodel
 **/*.mlpackage
 **/*.pt
-**/*.pth
+**/*.pth'
+
+# image
+**/*.jpg
+**/*.jpeg
+**/*.png
+**/*.gif
+**/*.bmp
+**/*.tiff
+**/*.webp
+**/*.ico
+**/*.svg
 
 # Coverage
 coverage/
