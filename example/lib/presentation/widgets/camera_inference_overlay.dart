@@ -36,6 +36,7 @@ class CameraInferenceOverlay extends StatelessWidget {
           DetectionStatsDisplay(
             detectionCount: controller.detectionCount,
             currentFps: controller.currentFps,
+            elapsedTime: controller.elapsedTime,
           ),
           const SizedBox(height: 8),
           _buildThresholdPills(),

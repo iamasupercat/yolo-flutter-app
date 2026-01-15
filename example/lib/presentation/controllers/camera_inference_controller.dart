@@ -1,5 +1,6 @@
 // Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:ultralytics_yolo/models/yolo_result.dart';
 import 'package:ultralytics_yolo/widgets/yolo_controller.dart';
@@ -7,6 +8,7 @@ import 'package:ultralytics_yolo/utils/error_handler.dart';
 import 'package:ultralytics_yolo/yolo_view.dart';
 import '../../models/models.dart';
 import '../../services/model_manager.dart';
+import '../../services/inspection_service.dart';
 
 /// Controller that manages the state and business logic for camera inference
 class CameraInferenceController extends ChangeNotifier {
@@ -37,6 +39,11 @@ class CameraInferenceController extends ChangeNotifier {
   // Controllers
   final _yoloController = YOLOViewController();
   late final ModelManager _modelManager;
+  late InspectionService _inspectionService;
+
+  // Camera freeze state (for condition-based inspection)
+  bool _isCameraFrozen = false;
+  Uint8List? _frozenFrame;
 
   // Performance optimization
   bool _isDisposed = false;
@@ -58,6 +65,9 @@ class CameraInferenceController extends ChangeNotifier {
   bool get isFrontCamera => _isFrontCamera;
   LensFacing get lensFacing => _lensFacing;
   YOLOViewController get yoloController => _yoloController;
+  bool get isCameraFrozen => _isCameraFrozen;
+  Uint8List? get frozenFrame => _frozenFrame;
+  double? get elapsedTime => _inspectionService.getElapsedTime();
 
   CameraInferenceController() {
     _isFrontCamera = _lensFacing == LensFacing.front;
@@ -71,6 +81,11 @@ class CameraInferenceController extends ChangeNotifier {
         _loadingMessage = message;
         notifyListeners();
       },
+    );
+
+    _inspectionService = InspectionService(
+      modelType: _selectedModel,
+      debug: false,
     );
   }
 
@@ -86,7 +101,7 @@ class CameraInferenceController extends ChangeNotifier {
 
   /// Handle detection results and calculate FPS
   void onDetectionResults(List<YOLOResult> results) {
-    if (_isDisposed) return;
+    if (_isDisposed || _isCameraFrozen) return; // 카메라가 정지되면 처리하지 않음
 
     _frameCount++;
     final now = DateTime.now();
@@ -101,6 +116,20 @@ class CameraInferenceController extends ChangeNotifier {
     if (_detectionCount != results.length) {
       _detectionCount = results.length;
       notifyListeners();
+    }
+
+    // 조건 확인 (live.py 참고)
+    final conditionResult = _inspectionService.checkCondition(results);
+    
+    if (conditionResult['satisfied'] == true) {
+      // 조건 만족 후 2초 지났는지 확인
+      if (_inspectionService.shouldInspect()) {
+        // 카메라 정지 및 프레임 캡처
+        _freezeCameraAndCapture();
+      } else {
+        // 타이머 진행 중 - UI 업데이트만
+        notifyListeners();
+      }
     }
   }
 
@@ -210,8 +239,54 @@ class CameraInferenceController extends ChangeNotifier {
 
     if (!_isModelLoading && model != _selectedModel) {
       _selectedModel = model;
+      _inspectionService = InspectionService(
+        modelType: model,
+        debug: false,
+      );
+      _isCameraFrozen = false;
+      _frozenFrame = null;
       _loadModelForPlatform();
     }
+  }
+
+  /// 카메라 정지 및 프레임 캡처 (live.py의 검사 시작 시점과 유사)
+  Future<void> _freezeCameraAndCapture() async {
+    if (_isCameraFrozen) return; // 이미 정지된 경우 중복 실행 방지
+
+    print('\n${'='*60}');
+    print('📸 조건이 ${InspectionService.requiredDuration}초 이상 유지됨! 카메라 정지...');
+    print('${'='*60}\n');
+
+    try {
+      // 먼저 현재 프레임 캡처
+      final frameBytes = await _yoloController.captureFrame();
+      if (frameBytes != null) {
+        _frozenFrame = frameBytes;
+        print('✅ 프레임 캡처 완료: ${frameBytes.length} bytes');
+      } else {
+        print('⚠️  프레임 캡처 실패');
+      }
+
+      // 카메라 정지
+      await _yoloController.stop();
+      _isCameraFrozen = true;
+      print('✅ 카메라 정지 완료');
+      notifyListeners();
+    } catch (e) {
+      print('❌ 카메라 정지 중 오류: $e');
+      _isCameraFrozen = false;
+      _frozenFrame = null;
+      notifyListeners();
+    }
+  }
+
+  /// 카메라 재시작 (필요한 경우)
+  Future<void> restartCamera() async {
+    _isCameraFrozen = false;
+    _frozenFrame = null;
+    _inspectionService.reset();
+    await _yoloController.restartCamera();
+    notifyListeners();
   }
 
   Future<void> _loadModelForPlatform() async {

@@ -1,5 +1,6 @@
 // Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:ultralytics_yolo/yolo_streaming_config.dart';
 import 'package:ultralytics_yolo/yolo_view.dart';
@@ -20,6 +21,17 @@ class CameraInferenceContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (controller.modelPath != null && !controller.isModelLoading) {
+      // 카메라가 정지된 경우 정지된 프레임 표시
+      if (controller.isCameraFrozen && controller.frozenFrame != null) {
+        return Image.memory(
+          controller.frozenFrame!,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+        );
+      }
+
+      // 정상적으로 카메라 스트림 표시
       return YOLOView(
         key: ValueKey(
           'yolo_view_${controller.modelPath}_${controller.selectedModel.task.name}_$rebuildKey',
