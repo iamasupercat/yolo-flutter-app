@@ -42,6 +42,8 @@ build/
 **/*.tflite
 **/*.mlmodel
 **/*.mlpackage
+**/*.pt
+**/*.pth
 
 # Coverage
 coverage/
