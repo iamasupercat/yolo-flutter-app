@@ -13,6 +13,23 @@ import '../../services/model_manager.dart';
 import '../../services/inspection_service.dart';
 import '../../services/dino_client.dart';
 
+/// Inspection result data class
+class InspectionResult {
+  final bool isGood;
+  final String resultText;
+  final double defectConfidence;
+  final String? details;
+  final DateTime timestamp;
+
+  InspectionResult({
+    required this.isGood,
+    required this.resultText,
+    this.defectConfidence = 0.0,
+    this.details,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+}
+
 /// Controller that manages the state and business logic for camera inference
 class CameraInferenceController extends ChangeNotifier {
   // Detection state
@@ -50,6 +67,9 @@ class CameraInferenceController extends ChangeNotifier {
   Uint8List? _frozenFrame;
   List<YOLOResult>? _frozenDetections; // 정지된 프레임의 탐지 결과
   String? _frozenFramePath; // 정지된 프레임 이미지 파일 경로
+  
+  // Inspection result
+  InspectionResult? _inspectionResult;
 
   // Performance optimization
   bool _isDisposed = false;
@@ -75,6 +95,7 @@ class CameraInferenceController extends ChangeNotifier {
   Uint8List? get frozenFrame => _frozenFrame;
   List<YOLOResult>? get frozenDetections => _frozenDetections; // 정지된 프레임의 YOLO 좌표
   String? get frozenFramePath => _frozenFramePath; // 정지된 프레임 이미지 파일 경로
+  InspectionResult? get inspectionResult => _inspectionResult; // 검사 결과
   double? get elapsedTime => _inspectionService.getElapsedTime();
 
   CameraInferenceController() {
@@ -371,10 +392,28 @@ class CameraInferenceController extends ChangeNotifier {
       _frozenFrame = null;
       _frozenDetections = null;
       _frozenFramePath = null;
+      _inspectionResult = null;
       _inspectionService.reset();
       await _yoloController.restartCamera();
       notifyListeners();
     }
+  
+  /// 검사 결과 저장
+  void _saveInspectionResult(bool isGood, String resultText, String details) {
+    _inspectionResult = InspectionResult(
+      isGood: isGood,
+      resultText: resultText,
+      details: details,
+      timestamp: DateTime.now(),
+    );
+    notifyListeners();
+  }
+  
+  /// 검사 결과 초기화
+  void clearInspectionResult() {
+    _inspectionResult = null;
+    notifyListeners();
+  }
 
   /// 정지된 프레임 이미지를 파일로 저장
   Future<String?> _saveFrozenFrame(Uint8List frameBytes) async {
@@ -441,6 +480,49 @@ class CameraInferenceController extends ChangeNotifier {
           for (final file in croppedFiles) {
             print('  - $file');
           }
+        }
+        
+        // DINO 분류 결과 출력
+        final classificationResults = result['classification_results'] as List<dynamic>?;
+        if (classificationResults != null && classificationResults.isNotEmpty) {
+          print('\n📊 DINO 분류 결과:');
+          for (final res in classificationResults) {
+            final isDefect = res['is_defect'] as bool;
+            final confidence = res['confidence'] as List<dynamic>;
+            final predClass = res['pred_class'] as int;
+            final defectConf = res['defect_confidence'] as double;
+            final resultText = isDefect ? '불량' : '양품';
+            final confDisplay = confidence[predClass] as double;
+            
+            if (_selectedModel == ModelType.bolt) {
+              final boltIndex = res['bolt_index'] as int? ?? 0;
+              final frameName = res['frame_name'] as String? ?? 'unknown';
+              print('  볼트 #$boltIndex ($frameName): $resultText (신뢰도: ${(confDisplay * 100).toStringAsFixed(1)}%, 불량확률: ${(defectConf * 100).toStringAsFixed(1)}%)');
+            } else {
+              final part = res['part'] as String? ?? 'unknown';
+              print('  도어 ${part.toUpperCase()}: $resultText (신뢰도: ${(confDisplay * 100).toStringAsFixed(1)}%, 불량확률: ${(defectConf * 100).toStringAsFixed(1)}%)');
+            }
+          }
+        }
+        
+        // 최종 판정 결과
+        final finalResult = result['final_result'] as Map<String, dynamic>?;
+        if (finalResult != null) {
+          final isGood = finalResult['is_good'] as bool;
+          final resultText = finalResult['result_text'] as String;
+          final avgDefectConf = finalResult['avg_defect_confidence'] as double;
+          final votingMethod = finalResult['voting_method'] as String;
+          
+          print('\n📊 최종 판정 (${votingMethod.toUpperCase()} Voting):');
+          print('  평균 불량 확률: ${(avgDefectConf * 100).toStringAsFixed(1)}%');
+          print('  결과: ${isGood ? '✅ 양품' : '❌ 불량'}');
+          
+          // UI에 최종 결과 표시
+          _saveInspectionResult(
+            isGood,
+            resultText,
+            '평균 불량 확률: ${(avgDefectConf * 100).toStringAsFixed(1)}%',
+          );
         }
       } else {
         print('⚠️  서버 저장 실패');

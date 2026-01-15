@@ -133,20 +133,49 @@ def save_frame():
         detections_json = request.form.get('detections')
         model_type = request.form.get('model_type', 'bolt')
         
+        crop_result = {'cropped_files': [], 'classification_results': []}
         if detections_json:
             try:
                 import json
                 detections = json.loads(detections_json)
-                cropped_files = _crop_detections(frame, detections, model_type)
+                crop_result = _crop_detections(frame, detections, model_type)
             except Exception as e:
                 print(f"  [DINO Server] 크롭 처리 중 오류: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Voting 로직 (live.py 참고)
+        final_result = None
+        if crop_result['classification_results']:
+            if model_type == 'bolt':
+                # 볼트: soft voting (평균 불량 확률)
+                defect_confidences = [r['defect_confidence'] for r in crop_result['classification_results']]
+                avg_defect_conf = sum(defect_confidences) / len(defect_confidences) if defect_confidences else 0.0
+                final_result = {
+                    'is_good': avg_defect_conf < 0.5,
+                    'result_text': '양품' if avg_defect_conf < 0.5 else '불량',
+                    'avg_defect_confidence': avg_defect_conf,
+                    'voting_method': 'soft'
+                }
+            elif model_type == 'door':
+                # 도어: soft voting (평균 불량 확률)
+                defect_confidences = [r['defect_confidence'] for r in crop_result['classification_results']]
+                avg_defect_conf = sum(defect_confidences) / len(defect_confidences) if defect_confidences else 0.0
+                final_result = {
+                    'is_good': avg_defect_conf < 0.5,
+                    'result_text': '양품' if avg_defect_conf < 0.5 else '불량',
+                    'avg_defect_confidence': avg_defect_conf,
+                    'voting_method': 'soft'
+                }
         
         return jsonify({
             'success': True,
             'filepath': image_filepath,
             'filename': filename,
             'size': len(image_bytes),
-            'cropped_files': cropped_files
+            'cropped_files': crop_result['cropped_files'],
+            'classification_results': crop_result['classification_results'],
+            'final_result': final_result
         })
     except Exception as e:
         print(f"DINO 서버 프레임 저장 중 오류: {e}")
@@ -155,9 +184,86 @@ def save_frame():
         return jsonify({'error': str(e)}), 500
 
 
+def _classify_cropped_image(cropped_img, model_key):
+    """
+    크롭된 이미지를 DINO 모델로 분류 (live.py의 _classify_with_dino 참고)
+    
+    Args:
+        cropped_img: OpenCV 이미지 (numpy array, BGR)
+        model_key: 'bolt', 'door_high', 'door_mid', 'door_low'
+    
+    Returns:
+        분류 결과 딕셔너리
+    """
+    if model_key not in models:
+        return {
+            'is_defect': True,
+            'confidence': [0.0, 1.0],
+            'pred_class': 1,
+            'defect_confidence': 1.0,
+            'num_classes': 2,
+            'error': f'Model {model_key} not loaded'
+        }
+    
+    if cropped_img.size == 0:
+        return {
+            'is_defect': True,
+            'confidence': [0.0, 1.0],
+            'pred_class': 1,
+            'defect_confidence': 1.0,
+            'num_classes': 2,
+            'error': 'Empty image'
+        }
+    
+    try:
+        model, num_classes = models[model_key]
+        
+        # BGR -> RGB 변환
+        cropped_rgb = cv2.cvtColor(cropped_img, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(cropped_rgb)
+        
+        # 전처리 및 텐서 변환
+        img_tensor = transform(pil_img).unsqueeze(0).to(device)
+        
+        # DINO 분류
+        with torch.no_grad():
+            outputs = model(img_tensor)
+            probs = torch.softmax(outputs, dim=1)
+            pred_class = torch.argmax(probs, dim=1).item()
+            confidence = probs[0].cpu().numpy().tolist()
+        
+        # 불량 판정 (live.py 참고)
+        if num_classes == 4:
+            is_defect = (pred_class != 0)
+            defect_confidence = sum(confidence[1:4]) if len(confidence) >= 4 else confidence[1] if len(confidence) >= 2 else 0.0
+        else:
+            is_defect = (pred_class == 1)
+            defect_confidence = confidence[1] if len(confidence) >= 2 else 0.0
+        
+        return {
+            'is_defect': is_defect,
+            'confidence': confidence,
+            'pred_class': pred_class,
+            'defect_confidence': defect_confidence,
+            'num_classes': num_classes
+        }
+    except Exception as e:
+        print(f"  [DINO Server] 분류 중 오류: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'is_defect': True,
+            'confidence': [0.0, 1.0],
+            'pred_class': 1,
+            'defect_confidence': 1.0,
+            'num_classes': 2,
+            'error': str(e)
+        }
+
+
 def _crop_detections(frame, detections, model_type):
     """
-    YOLO 탐지 결과를 이용하여 이미지 크롭 (live.py 참고)
+    YOLO 탐지 결과를 이용하여 이미지 크롭 및 DINO 분류 (live.py 참고)
     
     Args:
         frame: OpenCV 이미지 (numpy array)
@@ -165,9 +271,13 @@ def _crop_detections(frame, detections, model_type):
         model_type: 'bolt' 또는 'door'
     
     Returns:
-        크롭된 이미지 파일 경로 리스트
+        딕셔너리: {
+            'cropped_files': 크롭된 이미지 파일 경로 리스트,
+            'classification_results': 분류 결과 리스트
+        }
     """
     cropped_files = []
+    classification_results = []
     
     try:
         # debug_crop 폴더 생성
@@ -245,6 +355,18 @@ def _crop_detections(frame, detections, model_type):
                             cv2.imwrite(crop_filepath, cropped)
                             cropped_files.append(crop_filepath)
                             print(f"  [DINO Server] 볼트 크롭 저장: {crop_filepath} (크기: {cropped.shape[1]}x{cropped.shape[0]})")
+                            
+                            # DINO 모델로 분류 (live.py의 _inspect_bolt 참고)
+                            print(f"  [DINO Server] 볼트 #{i+1} DINO 분류 시작...")
+                            result = _classify_cropped_image(cropped, 'bolt')
+                            result['bolt_index'] = i + 1
+                            result['frame_name'] = frame_name
+                            result['crop_filepath'] = crop_filepath
+                            classification_results.append(result)
+                            
+                            result_text = "불량" if result['is_defect'] else "양품"
+                            conf_display = result['confidence'][result['pred_class']]
+                            print(f"  [DINO Server] 볼트 #{i+1}: {result_text} (신뢰도: {conf_display:.2%})")
         
         elif model_type == 'door':
             # door 폴더 생성
@@ -285,13 +407,28 @@ def _crop_detections(frame, detections, model_type):
                             cv2.imwrite(crop_filepath, cropped)
                             cropped_files.append(crop_filepath)
                             print(f"  [DINO Server] 도어 {part.upper()} 크롭 저장: {crop_filepath} (크기: {cropped.shape[1]}x{cropped.shape[0]})")
+                            
+                            # DINO 모델로 분류 (live.py의 _inspect_frontdoor 참고)
+                            model_key = f'door_{part}'  # door_high, door_mid, door_low
+                            print(f"  [DINO Server] 도어 {part.upper()} DINO 분류 시작...")
+                            result = _classify_cropped_image(cropped, model_key)
+                            result['part'] = part
+                            result['crop_filepath'] = crop_filepath
+                            classification_results.append(result)
+                            
+                            result_text = "불량" if result['is_defect'] else "양품"
+                            conf_display = result['confidence'][result['pred_class']]
+                            print(f"  [DINO Server] 도어 {part.upper()}: {result_text} (신뢰도: {conf_display:.2%})")
     
     except Exception as e:
         print(f"  [DINO Server] 크롭 처리 중 오류: {e}")
         import traceback
         traceback.print_exc()
     
-    return cropped_files
+    return {
+        'cropped_files': cropped_files,
+        'classification_results': classification_results
+    }
 
 
 @app.route('/classify', methods=['POST'])
