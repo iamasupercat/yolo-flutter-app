@@ -1795,8 +1795,8 @@ class YOLOView @JvmOverloads constructor(
                 }
             }
             
-            // Always draw the overlay on top
-            overlayView.draw(canvas)
+            // 원본 프레임만 캡처 (박스 오버레이 제외)
+            // overlayView.draw(canvas) 제거 - 박스가 그려지지 않은 원본 이미지만 캡처
             
             // Convert bitmap to JPEG byte array
             val outputStream = java.io.ByteArrayOutputStream()

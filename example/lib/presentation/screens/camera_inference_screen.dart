@@ -7,6 +7,7 @@ import '../widgets/camera_inference_overlay.dart';
 import '../widgets/camera_logo_overlay.dart';
 import '../widgets/camera_controls.dart';
 import '../widgets/threshold_slider.dart';
+import '../widgets/inspection_result_overlay.dart';
 
 /// A screen that demonstrates real-time YOLO inference using the device camera.
 ///
@@ -72,6 +73,9 @@ class _CameraInferenceScreenState extends State<CameraInferenceScreen> {
       body: ListenableBuilder(
         listenable: _controller,
         builder: (context, child) {
+          final isFrozen = _controller.isCameraFrozen;
+          final result = _controller.inspectionResult;
+          
           return Stack(
             children: [
               CameraInferenceContent(
@@ -79,31 +83,42 @@ class _CameraInferenceScreenState extends State<CameraInferenceScreen> {
                 controller: _controller,
                 rebuildKey: _rebuildKey,
               ),
-              CameraInferenceOverlay(
-                controller: _controller,
-                isLandscape: isLandscape,
-              ),
-              CameraLogoOverlay(
-                controller: _controller,
-                isLandscape: isLandscape,
-              ),
-              CameraControls(
-                currentZoomLevel: _controller.currentZoomLevel,
-                isFrontCamera: _controller.isFrontCamera,
-                activeSlider: _controller.activeSlider,
-                onZoomChanged: _controller.setZoomLevel,
-                onSliderToggled: _controller.toggleSlider,
-                onCameraFlipped: _controller.flipCamera,
-                isLandscape: isLandscape,
-              ),
-              ThresholdSlider(
-                activeSlider: _controller.activeSlider,
-                confidenceThreshold: _controller.confidenceThreshold,
-                iouThreshold: _controller.iouThreshold,
-                numItemsThreshold: _controller.numItemsThreshold,
-                onValueChanged: _controller.updateSliderValue,
-                isLandscape: isLandscape,
-              ),
+              // 카메라가 정지되지 않았을 때만 오버레이 표시
+              if (!isFrozen) ...[
+                CameraInferenceOverlay(
+                  controller: _controller,
+                  isLandscape: isLandscape,
+                ),
+                CameraLogoOverlay(
+                  controller: _controller,
+                  isLandscape: isLandscape,
+                ),
+                CameraControls(
+                  currentZoomLevel: _controller.currentZoomLevel,
+                  isFrontCamera: _controller.isFrontCamera,
+                  activeSlider: _controller.activeSlider,
+                  onZoomChanged: _controller.setZoomLevel,
+                  onSliderToggled: _controller.toggleSlider,
+                  onCameraFlipped: _controller.flipCamera,
+                  isLandscape: isLandscape,
+                ),
+                ThresholdSlider(
+                  activeSlider: _controller.activeSlider,
+                  confidenceThreshold: _controller.confidenceThreshold,
+                  iouThreshold: _controller.iouThreshold,
+                  numItemsThreshold: _controller.numItemsThreshold,
+                  onValueChanged: _controller.updateSliderValue,
+                  isLandscape: isLandscape,
+                ),
+              ],
+              // 카메라가 정지되고 결과가 있으면 결과 오버레이 표시
+              if (isFrozen && result != null)
+                InspectionResultOverlay(
+                  result: result,
+                  onRestart: () {
+                    _controller.restartCamera();
+                  },
+                ),
             ],
           );
         },

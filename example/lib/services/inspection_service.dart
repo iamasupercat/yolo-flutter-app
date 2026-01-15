@@ -137,7 +137,17 @@ class InspectionService {
     }
     
     final elapsed = DateTime.now().difference(_conditionStartTime!).inMilliseconds / 1000.0;
-    return elapsed >= requiredDuration;
+    final shouldInspect = elapsed >= requiredDuration;
+    
+    // 디버깅 로그 (타이머 진행 상황)
+    if (!shouldInspect && elapsed > 0.5) {
+      // 0.5초마다 로그 출력 (너무 많이 출력되지 않도록)
+      if ((elapsed * 2).round() % 1 == 0) {
+        print('  [타이머] ${elapsed.toStringAsFixed(1)}s / ${requiredDuration}s (모델: ${modelType == ModelType.bolt ? '볼트' : '도어'})');
+      }
+    }
+    
+    return shouldInspect;
   }
   
   /// Get elapsed time since condition was met
@@ -233,7 +243,14 @@ class InspectionService {
                        parts['low']!.length == 1 &&
                        parts['mid']!.isEmpty;
     
-    return hasAllThree || hasHighLow;
+    final satisfied = hasAllThree || hasHighLow;
+    
+    // 디버깅 로그 추가
+    if (satisfied) {
+      print('  [도어 조건] 만족: high=${parts['high']!.length}, mid=${parts['mid']!.length}, low=${parts['low']!.length}');
+    }
+    
+    return satisfied;
   }
   
   /// Crop image based on bounding box coordinates

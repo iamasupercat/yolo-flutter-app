@@ -307,6 +307,10 @@ class CameraInferenceController extends ChangeNotifier {
       return; // 이미 정지된 경우 중복 실행 방지
     }
 
+    // 먼저 카메라 정지 상태로 설정하여 중복 호출 방지
+    _isCameraFrozen = true;
+    notifyListeners();
+
     print('\n${'='*60}');
     print('📸 조건이 ${InspectionService.requiredDuration}초 이상 유지됨! 카메라 정지...');
     print('${'='*60}\n');
@@ -371,7 +375,6 @@ class CameraInferenceController extends ChangeNotifier {
       print('📋 5단계: 카메라 정지 시작...');
       // 카메라 정지 (프레임 캡처 후에!)
       await _yoloController.stop();
-      _isCameraFrozen = true;
       print('✅ 카메라 정지 완료');
       notifyListeners();
       print('✅ 모든 단계 완료!');
