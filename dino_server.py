@@ -133,6 +133,10 @@ def save_frame():
         detections_json = request.form.get('detections')
         model_type = request.form.get('model_type', 'bolt')
         
+        # 캡처된 프레임 크기
+        frame_h, frame_w = frame.shape[:2]
+        print(f"  [DINO Server] 캡처된 프레임 크기: {frame_w}x{frame_h}")
+        
         crop_result = {'cropped_files': [], 'classification_results': []}
         if detections_json:
             try:
@@ -280,6 +284,9 @@ def _crop_detections(frame, detections, model_type):
     classification_results = []
     
     try:
+        # 프레임 크기 가져오기
+        frame_h, frame_w = frame.shape[:2]
+        
         # debug_crop 폴더 생성
         debug_crop_dir = os.path.join(os.getcwd(), 'debug_crop')
         os.makedirs(debug_crop_dir, exist_ok=True)
@@ -333,18 +340,29 @@ def _crop_detections(frame, detections, model_type):
                 
                 # 각 볼트 크롭 (live.py: bolt_{i+1}_{frame_name}_{timestamp}.jpg)
                 for i, bolt in enumerate(bolts_in_frame):
-                    bolt_bbox = bolt.get('boundingBox', {})
-                    x1 = int(bolt_bbox.get('left', 0))
-                    y1 = int(bolt_bbox.get('top', 0))
-                    x2 = int(bolt_bbox.get('right', 0))
-                    y2 = int(bolt_bbox.get('bottom', 0))
+                    # 정규화 좌표를 우선 사용 (이미지 크기와 무관)
+                    normalized_bbox = bolt.get('normalizedBox', {})
+                    if normalized_bbox:
+                        # 정규화 좌표(0-1)를 픽셀 좌표로 변환
+                        x1 = int(normalized_bbox.get('left', 0) * frame_w)
+                        y1 = int(normalized_bbox.get('top', 0) * frame_h)
+                        x2 = int(normalized_bbox.get('right', 0) * frame_w)
+                        y2 = int(normalized_bbox.get('bottom', 0) * frame_h)
+                        print(f"  [DINO Server] 볼트 #{i+1} 정규화 좌표 사용: ({x1}, {y1}, {x2}, {y2})")
+                    else:
+                        # 정규화 좌표가 없으면 픽셀 좌표 사용 (기존 방식)
+                        bolt_bbox = bolt.get('boundingBox', {})
+                        x1 = int(bolt_bbox.get('left', 0))
+                        y1 = int(bolt_bbox.get('top', 0))
+                        x2 = int(bolt_bbox.get('right', 0))
+                        y2 = int(bolt_bbox.get('bottom', 0))
+                        print(f"  [DINO Server] 볼트 #{i+1} 픽셀 좌표 사용: ({x1}, {y1}, {x2}, {y2})")
                     
                     # 이미지 경계 확인
-                    h, w = frame.shape[:2]
-                    x1 = max(0, min(x1, w))
-                    y1 = max(0, min(y1, h))
-                    x2 = max(0, min(x2, w))
-                    y2 = max(0, min(y2, h))
+                    x1 = max(0, min(x1, frame_w))
+                    y1 = max(0, min(y1, frame_h))
+                    x2 = max(0, min(x2, frame_w))
+                    y2 = max(0, min(y2, frame_h))
                     
                     if x2 > x1 and y2 > y1:
                         cropped = frame[y1:y2, x1:x2]
@@ -385,18 +403,29 @@ def _crop_detections(frame, detections, model_type):
             for part in ['high', 'mid', 'low']:
                 if parts[part]:
                     part_det = parts[part][0]  # 첫 번째 탐지만 사용
-                    part_bbox = part_det.get('boundingBox', {})
-                    x1 = int(part_bbox.get('left', 0))
-                    y1 = int(part_bbox.get('top', 0))
-                    x2 = int(part_bbox.get('right', 0))
-                    y2 = int(part_bbox.get('bottom', 0))
+                    # 정규화 좌표를 우선 사용 (이미지 크기와 무관)
+                    normalized_bbox = part_det.get('normalizedBox', {})
+                    if normalized_bbox:
+                        # 정규화 좌표(0-1)를 픽셀 좌표로 변환
+                        x1 = int(normalized_bbox.get('left', 0) * frame_w)
+                        y1 = int(normalized_bbox.get('top', 0) * frame_h)
+                        x2 = int(normalized_bbox.get('right', 0) * frame_w)
+                        y2 = int(normalized_bbox.get('bottom', 0) * frame_h)
+                        print(f"  [DINO Server] 도어 {part.upper()} 정규화 좌표 사용: ({x1}, {y1}, {x2}, {y2})")
+                    else:
+                        # 정규화 좌표가 없으면 픽셀 좌표 사용 (기존 방식)
+                        part_bbox = part_det.get('boundingBox', {})
+                        x1 = int(part_bbox.get('left', 0))
+                        y1 = int(part_bbox.get('top', 0))
+                        x2 = int(part_bbox.get('right', 0))
+                        y2 = int(part_bbox.get('bottom', 0))
+                        print(f"  [DINO Server] 도어 {part.upper()} 픽셀 좌표 사용: ({x1}, {y1}, {x2}, {y2})")
                     
                     # 이미지 경계 확인
-                    h, w = frame.shape[:2]
-                    x1 = max(0, min(x1, w))
-                    y1 = max(0, min(y1, h))
-                    x2 = max(0, min(x2, w))
-                    y2 = max(0, min(y2, h))
+                    x1 = max(0, min(x1, frame_w))
+                    y1 = max(0, min(y1, frame_h))
+                    x2 = max(0, min(x2, frame_w))
+                    y2 = max(0, min(y2, frame_h))
                     
                     if x2 > x1 and y2 > y1:
                         cropped = frame[y1:y2, x1:x2]

@@ -402,10 +402,11 @@ class CameraInferenceController extends ChangeNotifier {
     }
   
   /// 검사 결과 저장
-  void _saveInspectionResult(bool isGood, String resultText, String details) {
+  void _saveInspectionResult(bool isGood, String resultText, String details, {double? defectConfidence}) {
     _inspectionResult = InspectionResult(
       isGood: isGood,
       resultText: resultText,
+      defectConfidence: defectConfidence ?? 0.0,
       details: details,
       timestamp: DateTime.now(),
     );
@@ -449,7 +450,7 @@ class CameraInferenceController extends ChangeNotifier {
           .substring(0, 19);
       final filename = 'frozen_frame_$timestamp.jpg';
       
-      // YOLOResult를 Map으로 변환
+      // YOLOResult를 Map으로 변환 (정규화 좌표 포함)
       final detectionsList = _frozenDetections!.map((result) {
         return {
           'classIndex': result.classIndex,
@@ -460,6 +461,12 @@ class CameraInferenceController extends ChangeNotifier {
             'top': result.boundingBox.top,
             'right': result.boundingBox.right,
             'bottom': result.boundingBox.bottom,
+          },
+          'normalizedBox': {
+            'left': result.normalizedBox.left,
+            'top': result.normalizedBox.top,
+            'right': result.normalizedBox.right,
+            'bottom': result.normalizedBox.bottom,
           },
         };
       }).toList();
@@ -524,7 +531,8 @@ class CameraInferenceController extends ChangeNotifier {
           _saveInspectionResult(
             isGood,
             resultText,
-            '평균 불량 확률: ${(avgDefectConf * 100).toStringAsFixed(1)}%',
+            "평균 불량 확률: ${(avgDefectConf * 100).toStringAsFixed(1)}%",
+            defectConfidence: avgDefectConf,
           );
         }
       } else {

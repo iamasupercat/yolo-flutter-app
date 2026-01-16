@@ -205,9 +205,9 @@ class DINOClient {
       request.fields['model_type'] = modelType;
       
       // YOLO 탐지 결과를 JSON으로 변환하여 전송
-      // YOLOResult를 Map으로 변환
+      // YOLOResult를 Map으로 변환 (정규화 좌표 포함)
       final detectionsList = detections.map((det) {
-        return {
+        final detection = {
           'classIndex': det['classIndex'],
           'className': det['className'],
           'confidence': det['confidence'],
@@ -218,6 +218,16 @@ class DINOClient {
             'bottom': det['boundingBox']['bottom'],
           },
         };
+        // 정규화 좌표가 있으면 추가
+        if (det.containsKey('normalizedBox')) {
+          detection['normalizedBox'] = {
+            'left': det['normalizedBox']['left'],
+            'top': det['normalizedBox']['top'],
+            'right': det['normalizedBox']['right'],
+            'bottom': det['normalizedBox']['bottom'],
+          };
+        }
+        return detection;
       }).toList();
       
       request.fields['detections'] = json.encode(detectionsList);
