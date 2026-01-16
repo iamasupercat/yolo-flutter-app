@@ -2,6 +2,7 @@
 
 import 'dart:typed_data';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:ultralytics_yolo/models/yolo_result.dart';
@@ -168,9 +169,13 @@ class CameraInferenceController extends ChangeNotifier {
     if (conditionResult['satisfied'] == true) {
       // 조건 만족 후 2초 지났는지 확인
       if (_inspectionService.shouldInspect()) {
-        // 카메라 정지 및 프레임 캡처 (마지막 탐지 결과와 함께)
-        print('🔍 shouldInspect() = true, _freezeCameraAndCapture 호출 시작...');
-        _freezeCameraAndCapture(results).catchError((error, stackTrace) {
+        // ⚠️ 중요: 현재 프레임의 탐지 결과를 즉시 저장 (프레임 캡처 전에!)
+        // 이렇게 하면 captureFrame()이 호출될 때와 정확히 같은 시점의 탐지 결과를 사용할 수 있음
+        _frozenDetections = List.from(results);
+        print('🔍 shouldInspect() = true, 현재 프레임의 탐지 결과 저장 완료: ${_frozenDetections!.length}개 객체');
+        print('🔍 _freezeCameraAndCapture 호출 시작...');
+        // 이제 _freezeCameraAndCapture는 이미 저장된 _frozenDetections를 사용
+        _freezeCameraAndCapture().catchError((error, stackTrace) {
           print('❌ _freezeCameraAndCapture 실행 중 오류: $error');
           print('  스택 트레이스: $stackTrace');
         });
@@ -300,11 +305,17 @@ class CameraInferenceController extends ChangeNotifier {
   }
 
   /// 카메라 정지 및 프레임 캡처 (live.py의 검사 시작 시점과 유사)
-  /// [lastResults] 마지막 탐지 결과 (YOLO 좌표 포함)
-  Future<void> _freezeCameraAndCapture(List<YOLOResult> lastResults) async {
+  /// 주의: _frozenDetections는 onDetectionResults에서 이미 저장되어 있어야 함
+  Future<void> _freezeCameraAndCapture() async {
     if (_isCameraFrozen) {
       print('⚠️  이미 카메라가 정지되어 있음, _freezeCameraAndCapture 건너뜀');
       return; // 이미 정지된 경우 중복 실행 방지
+    }
+
+    // _frozenDetections가 없으면 오류
+    if (_frozenDetections == null || _frozenDetections!.isEmpty) {
+      print('❌ _frozenDetections가 없습니다. onDetectionResults에서 먼저 저장되어야 합니다.');
+      return;
     }
 
     // 먼저 카메라 정지 상태로 설정하여 중복 호출 방지
@@ -316,10 +327,9 @@ class CameraInferenceController extends ChangeNotifier {
     print('${'='*60}\n');
 
     try {
-      print('📋 1단계: 탐지 결과 저장 시작...');
-      // 먼저 마지막 탐지 결과 저장 (YOLO 좌표 포함) - 서버 전송 전에 필요
-      _frozenDetections = List.from(lastResults);
-      print('✅ 탐지 결과 저장 완료: ${_frozenDetections!.length}개 객체');
+      // ⚠️ 중요: _frozenDetections는 onDetectionResults에서 이미 저장됨
+      // 이제 프레임을 캡처하면, 저장된 탐지 결과와 정확히 같은 시점의 프레임을 캡처함
+      print('📋 1단계: 저장된 탐지 결과 확인 (${_frozenDetections!.length}개 객체)...');
       
       // 각 탐지 결과의 좌표 정보 출력 (디버깅용)
       for (int i = 0; i < _frozenDetections!.length; i++) {
@@ -331,9 +341,26 @@ class CameraInferenceController extends ChangeNotifier {
         print('    - 정규화 좌표: left=${result.normalizedBox.left.toStringAsFixed(3)}, top=${result.normalizedBox.top.toStringAsFixed(3)}, right=${result.normalizedBox.right.toStringAsFixed(3)}, bottom=${result.normalizedBox.bottom.toStringAsFixed(3)}');
       }
       
-      print('📋 2단계: 프레임 캡처 시작...');
-      // 현재 프레임 캡처 (카메라가 닫히기 전에!)
+      // 2단계: 즉시 프레임 캡처 (탐지 결과와 동일한 시점의 프레임을 캡처)
+      // _isCameraFrozen = true로 설정했으므로 onDetectionResults는 더 이상 호출되지 않음
+      // _frozenDetections는 onDetectionResults에서 이미 저장되었으므로, 
+      // 이 시점에 captureFrame()을 호출하면 저장된 탐지 결과와 동일한 시점의 프레임을 캡처함
+      print('📋 2단계: 프레임 캡처 시작 (저장된 탐지 결과와 동일 시점의 프레임 캡처)...');
       final frameBytes = await _yoloController.captureFrame();
+      
+      // 프레임 크기 확인 및 저장 (서버로 전송하기 위해)
+      int? frameWidth;
+      int? frameHeight;
+      if (frameBytes != null) {
+        final codec = await ui.instantiateImageCodec(frameBytes);
+        final frame = await codec.getNextFrame();
+        final image = frame.image;
+        frameWidth = image.width;
+        frameHeight = image.height;
+        print('  📐 캡처된 프레임 크기: ${frameWidth}x${frameHeight}');
+        image.dispose();
+        codec.dispose();
+      }
       if (frameBytes != null) {
         _frozenFrame = frameBytes;
         print('✅ 프레임 캡처 완료: ${frameBytes.length} bytes');
@@ -363,7 +390,7 @@ class CameraInferenceController extends ChangeNotifier {
             print('       --door-mid-model models/dino/DoorDINO_mid.pt \\');
             print('       --door-low-model models/dino/DoorDINO_low.pt');
           } else {
-            await _sendFrozenFrameToServer(frameBytes);
+            await _sendFrozenFrameToServer(frameBytes, frameWidth, frameHeight);
           }
         } else {
           print('⚠️  DINO 클라이언트가 null입니다. 서버 전송 건너뜀');
@@ -440,7 +467,7 @@ class CameraInferenceController extends ChangeNotifier {
   }
   
   /// 정지된 프레임을 DINO 서버로 전송 (이미지 + YOLO 좌표)
-  Future<void> _sendFrozenFrameToServer(Uint8List frameBytes) async {
+  Future<void> _sendFrozenFrameToServer(Uint8List frameBytes, int? frameWidth, int? frameHeight) async {
     if (_dinoClient == null || _frozenDetections == null) return;
     
     try {
@@ -471,15 +498,51 @@ class CameraInferenceController extends ChangeNotifier {
         };
       }).toList();
       
+      // 원본 이미지 크기 추정 (boundingBox와 normalizedBox를 이용)
+      // normalizedBox = boundingBox / origSize 이므로
+      // origSize = boundingBox / normalizedBox
+      int? origWidth;
+      int? origHeight;
+      if (_frozenDetections!.isNotEmpty) {
+        double maxRight = 0;
+        double maxBottom = 0;
+        double maxNormRight = 0;
+        double maxNormBottom = 0;
+        
+        for (final result in _frozenDetections!) {
+          if (result.boundingBox.right > maxRight) {
+            maxRight = result.boundingBox.right;
+            maxNormRight = result.normalizedBox.right;
+          }
+          if (result.boundingBox.bottom > maxBottom) {
+            maxBottom = result.boundingBox.bottom;
+            maxNormBottom = result.normalizedBox.bottom;
+          }
+        }
+        
+        if (maxNormRight > 0) {
+          origWidth = (maxRight / maxNormRight).round();
+        }
+        if (maxNormBottom > 0) {
+          origHeight = (maxBottom / maxNormBottom).round();
+        }
+        
+        print('  📐 추정된 원본 이미지 크기: ${origWidth}x${origHeight}');
+      }
+      
       // 모델 타입 결정
       final modelType = _selectedModel == ModelType.bolt ? 'bolt' : 'door';
       
-      print('📤 정지 프레임과 YOLO 좌표를 서버로 전송 중...');
+        print('📤 정지 프레임과 YOLO 좌표를 서버로 전송 중...');
       final result = await _dinoClient!.saveFrame(
-        frameBytes,
+        frameBytes!,
         detectionsList,
         modelType,
         filename: filename,
+        frameWidth: frameWidth,
+        frameHeight: frameHeight,
+        origWidth: origWidth,
+        origHeight: origHeight,
       );
       
       if (result != null && result['success'] == true) {

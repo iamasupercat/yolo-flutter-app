@@ -137,12 +137,37 @@ def save_frame():
         frame_h, frame_w = frame.shape[:2]
         print(f"  [DINO Server] 캡처된 프레임 크기: {frame_w}x{frame_h}")
         
+        # 클라이언트에서 전송한 프레임 크기 정보 (디버깅용)
+        client_frame_w = request.form.get('frame_width')
+        client_frame_h = request.form.get('frame_height')
+        if client_frame_w and client_frame_h:
+            print(f"  [DINO Server] 클라이언트가 전송한 프레임 크기: {client_frame_w}x{client_frame_h}")
+            if int(client_frame_w) != frame_w or int(client_frame_h) != frame_h:
+                print(f"  [DINO Server] ⚠️  경고: 프레임 크기가 일치하지 않습니다!")
+                print(f"    서버 디코딩 크기: {frame_w}x{frame_h}")
+                print(f"    클라이언트 전송 크기: {client_frame_w}x{client_frame_h}")
+        
+        # 화면 크기 및 원본 이미지 크기 정보 가져오기 (화면 변환 재현용)
+        view_width = request.form.get('view_width')
+        view_height = request.form.get('view_height')
+        orig_width = request.form.get('orig_width')
+        orig_height = request.form.get('orig_height')
+        
         crop_result = {'cropped_files': [], 'classification_results': []}
         if detections_json:
             try:
                 import json
                 detections = json.loads(detections_json)
-                crop_result = _crop_detections(frame, detections, model_type)
+                # 화면 변환 정보를 전달하여 정확한 크롭 수행
+                crop_result = _crop_detections(
+                    frame, 
+                    detections, 
+                    model_type,
+                    view_width=int(view_width) if view_width else None,
+                    view_height=int(view_height) if view_height else None,
+                    orig_width=int(orig_width) if orig_width else None,
+                    orig_height=int(orig_height) if orig_height else None,
+                )
             except Exception as e:
                 print(f"  [DINO Server] 크롭 처리 중 오류: {e}")
                 import traceback
@@ -265,14 +290,23 @@ def _classify_cropped_image(cropped_img, model_key):
         }
 
 
-def _crop_detections(frame, detections, model_type):
+def _crop_detections(frame, detections, model_type, view_width=None, view_height=None, orig_width=None, orig_height=None):
     """
     YOLO 탐지 결과를 이용하여 이미지 크롭 및 DINO 분류 (live.py 참고)
+    
+    화면에 그려진 박스와 정확히 같은 영역을 크롭하기 위해:
+    1. 이미지를 화면에 그려진 것처럼 변환 (스케일 + 오프셋)
+    2. 변환된 이미지에서 YOLO 좌표로 크롭
+    3. 크롭된 이미지를 원본 비율로 복원
     
     Args:
         frame: OpenCV 이미지 (numpy array)
         detections: YOLO 탐지 결과 리스트
         model_type: 'bolt' 또는 'door'
+        view_width: 화면 너비 (선택사항)
+        view_height: 화면 높이 (선택사항)
+        orig_width: YOLO 원본 이미지 너비 (선택사항)
+        orig_height: YOLO 원본 이미지 높이 (선택사항)
     
     Returns:
         딕셔너리: {
@@ -286,6 +320,35 @@ def _crop_detections(frame, detections, model_type):
     try:
         # 프레임 크기 가져오기
         frame_h, frame_w = frame.shape[:2]
+        
+        # 화면 변환 정보 계산 (화면에 박스를 그릴 때 사용하는 변환 재현)
+        use_screen_transform = False
+        scale = 1.0
+        dx = 0.0
+        dy = 0.0
+        
+        if view_width and view_height and orig_width and orig_height:
+            # 화면에 박스를 그릴 때 사용하는 변환 계산
+            # Android YOLOView.kt 참고:
+            # scale = max(vw/iw, vh/ih)
+            # dx = (vw - iw*scale) / 2
+            # dy = (vh - ih*scale) / 2
+            scale_x = view_width / orig_width
+            scale_y = view_height / orig_height
+            scale = max(scale_x, scale_y)
+            
+            scaled_w = orig_width * scale
+            scaled_h = orig_height * scale
+            dx = (view_width - scaled_w) / 2.0
+            dy = (view_height - scaled_h) / 2.0
+            
+            use_screen_transform = True
+            print(f"  [DINO Server] 화면 변환 정보:")
+            print(f"    원본 이미지 크기: {orig_width}x{orig_height}")
+            print(f"    화면 크기: {view_width}x{view_height}")
+            print(f"    스케일: {scale:.6f} (scaleX={scale_x:.6f}, scaleY={scale_y:.6f})")
+            print(f"    오프셋: dx={dx:.2f}, dy={dy:.2f}")
+            print(f"    프레임 크기: {frame_w}x{frame_h}")
         
         # debug_crop 폴더 생성
         debug_crop_dir = os.path.join(os.getcwd(), 'debug_crop')
@@ -340,31 +403,76 @@ def _crop_detections(frame, detections, model_type):
                 
                 # 각 볼트 크롭 (live.py: bolt_{i+1}_{frame_name}_{timestamp}.jpg)
                 for i, bolt in enumerate(bolts_in_frame):
-                    # 정규화 좌표를 우선 사용 (이미지 크기와 무관)
+                    # ⚠️ 중요: 정규화 좌표만 사용 (화면 크기와 무관하게 정확한 크롭을 위해)
                     normalized_bbox = bolt.get('normalizedBox', {})
-                    if normalized_bbox:
-                        # 정규화 좌표(0-1)를 픽셀 좌표로 변환
-                        x1 = int(normalized_bbox.get('left', 0) * frame_w)
-                        y1 = int(normalized_bbox.get('top', 0) * frame_h)
-                        x2 = int(normalized_bbox.get('right', 0) * frame_w)
-                        y2 = int(normalized_bbox.get('bottom', 0) * frame_h)
-                        print(f"  [DINO Server] 볼트 #{i+1} 정규화 좌표 사용: ({x1}, {y1}, {x2}, {y2})")
-                    else:
-                        # 정규화 좌표가 없으면 픽셀 좌표 사용 (기존 방식)
-                        bolt_bbox = bolt.get('boundingBox', {})
-                        x1 = int(bolt_bbox.get('left', 0))
-                        y1 = int(bolt_bbox.get('top', 0))
-                        x2 = int(bolt_bbox.get('right', 0))
-                        y2 = int(bolt_bbox.get('bottom', 0))
-                        print(f"  [DINO Server] 볼트 #{i+1} 픽셀 좌표 사용: ({x1}, {y1}, {x2}, {y2})")
+                    if not normalized_bbox:
+                        print(f"  [DINO Server] ⚠️  볼트 #{i+1}: 정규화 좌표가 없습니다. 건너뜁니다.")
+                        continue
                     
-                    # 이미지 경계 확인
-                    x1 = max(0, min(x1, frame_w))
-                    y1 = max(0, min(y1, frame_h))
-                    x2 = max(0, min(x2, frame_w))
-                    y2 = max(0, min(y2, frame_h))
+                    # YOLO가 내뱉은 정규화 좌표를 그대로 사용
+                    norm_left = float(normalized_bbox.get('left', 0))
+                    norm_top = float(normalized_bbox.get('top', 0))
+                    norm_right = float(normalized_bbox.get('right', 0))
+                    norm_bottom = float(normalized_bbox.get('bottom', 0))
+                    
+                    if use_screen_transform:
+                        # 화면에 그려진 박스와 정확히 같은 영역을 크롭하기 위해:
+                        # 1. 정규화 좌표를 원본 이미지 크기 기준 픽셀 좌표로 변환
+                        orig_x1 = norm_left * orig_width
+                        orig_y1 = norm_top * orig_height
+                        orig_x2 = norm_right * orig_width
+                        orig_y2 = norm_bottom * orig_height
+                        
+                        # 2. 화면 좌표로 변환 (화면에 그릴 때 사용하는 변환)
+                        screen_x1 = orig_x1 * scale + dx
+                        screen_y1 = orig_y1 * scale + dy
+                        screen_x2 = orig_x2 * scale + dx
+                        screen_y2 = orig_y2 * scale + dy
+                        
+                        # 3. 화면 좌표를 프레임 크기에 맞게 스케일링
+                        # 프레임 크기와 화면 크기의 비율 계산
+                        frame_scale_x = frame_w / view_width
+                        frame_scale_y = frame_h / view_height
+                        
+                        # 프레임 좌표로 변환
+                        x1 = int(screen_x1 * frame_scale_x)
+                        y1 = int(screen_y1 * frame_scale_y)
+                        x2 = int(screen_x2 * frame_scale_x)
+                        y2 = int(screen_y2 * frame_scale_y)
+                        
+                        print(f"  [DINO Server] 볼트 #{i+1} 크롭 좌표 (화면 변환 적용):")
+                        print(f"    YOLO 정규화 좌표: left={norm_left:.6f}, top={norm_top:.6f}, right={norm_right:.6f}, bottom={norm_bottom:.6f}")
+                        print(f"    원본 이미지 좌표: ({orig_x1:.2f}, {orig_y1:.2f}, {orig_x2:.2f}, {orig_y2:.2f})")
+                        print(f"    화면 좌표: ({screen_x1:.2f}, {screen_y1:.2f}, {screen_x2:.2f}, {screen_y2:.2f})")
+                        print(f"    프레임 좌표: ({x1}, {y1}, {x2}, {y2})")
+                    else:
+                        # 화면 변환 정보가 없으면 기존 방식 사용
+                        x1_float = norm_left * frame_w
+                        y1_float = norm_top * frame_h
+                        x2_float = norm_right * frame_w
+                        y2_float = norm_bottom * frame_h
+                        
+                        x1 = int(x1_float)
+                        y1 = int(y1_float)
+                        x2 = int(x2_float)
+                        y2 = int(y2_float)
+                        
+                        print(f"  [DINO Server] 볼트 #{i+1} 크롭 좌표 (기본 변환):")
+                        print(f"    YOLO 정규화 좌표: left={norm_left:.6f}, top={norm_top:.6f}, right={norm_right:.6f}, bottom={norm_bottom:.6f}")
+                        print(f"    프레임 크기: {frame_w}x{frame_h}")
+                        print(f"    계산(float): x1={x1_float:.2f}, y1={y1_float:.2f}, x2={x2_float:.2f}, y2={y2_float:.2f}")
+                        print(f"    변환된 픽셀 좌표: ({x1}, {y1}, {x2}, {y2})")
+                    
+                    # 이미지 경계 확인 및 보정
+                    x1 = max(0, min(x1, frame_w - 1))
+                    y1 = max(0, min(y1, frame_h - 1))
+                    x2 = max(x1 + 1, min(x2, frame_w))
+                    y2 = max(y1 + 1, min(y2, frame_h))
+                    
+                    print(f"    경계 보정 후: ({x1}, {y1}, {x2}, {y2})")
                     
                     if x2 > x1 and y2 > y1:
+                        # NumPy 배열 슬라이싱으로 크롭 (flip 없이 원본 그대로)
                         cropped = frame[y1:y2, x1:x2]
                         if cropped.size > 0:
                             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -403,31 +511,76 @@ def _crop_detections(frame, detections, model_type):
             for part in ['high', 'mid', 'low']:
                 if parts[part]:
                     part_det = parts[part][0]  # 첫 번째 탐지만 사용
-                    # 정규화 좌표를 우선 사용 (이미지 크기와 무관)
+                    # ⚠️ 중요: 정규화 좌표만 사용 (화면 크기와 무관하게 정확한 크롭을 위해)
                     normalized_bbox = part_det.get('normalizedBox', {})
-                    if normalized_bbox:
-                        # 정규화 좌표(0-1)를 픽셀 좌표로 변환
-                        x1 = int(normalized_bbox.get('left', 0) * frame_w)
-                        y1 = int(normalized_bbox.get('top', 0) * frame_h)
-                        x2 = int(normalized_bbox.get('right', 0) * frame_w)
-                        y2 = int(normalized_bbox.get('bottom', 0) * frame_h)
-                        print(f"  [DINO Server] 도어 {part.upper()} 정규화 좌표 사용: ({x1}, {y1}, {x2}, {y2})")
-                    else:
-                        # 정규화 좌표가 없으면 픽셀 좌표 사용 (기존 방식)
-                        part_bbox = part_det.get('boundingBox', {})
-                        x1 = int(part_bbox.get('left', 0))
-                        y1 = int(part_bbox.get('top', 0))
-                        x2 = int(part_bbox.get('right', 0))
-                        y2 = int(part_bbox.get('bottom', 0))
-                        print(f"  [DINO Server] 도어 {part.upper()} 픽셀 좌표 사용: ({x1}, {y1}, {x2}, {y2})")
+                    if not normalized_bbox:
+                        print(f"  [DINO Server] ⚠️  도어 {part.upper()}: 정규화 좌표가 없습니다. 건너뜁니다.")
+                        continue
                     
-                    # 이미지 경계 확인
-                    x1 = max(0, min(x1, frame_w))
-                    y1 = max(0, min(y1, frame_h))
-                    x2 = max(0, min(x2, frame_w))
-                    y2 = max(0, min(y2, frame_h))
+                    # YOLO가 내뱉은 정규화 좌표를 그대로 사용
+                    norm_left = float(normalized_bbox.get('left', 0))
+                    norm_top = float(normalized_bbox.get('top', 0))
+                    norm_right = float(normalized_bbox.get('right', 0))
+                    norm_bottom = float(normalized_bbox.get('bottom', 0))
+                    
+                    if use_screen_transform:
+                        # 화면에 그려진 박스와 정확히 같은 영역을 크롭하기 위해:
+                        # 1. 정규화 좌표를 원본 이미지 크기 기준 픽셀 좌표로 변환
+                        orig_x1 = norm_left * orig_width
+                        orig_y1 = norm_top * orig_height
+                        orig_x2 = norm_right * orig_width
+                        orig_y2 = norm_bottom * orig_height
+                        
+                        # 2. 화면 좌표로 변환 (화면에 그릴 때 사용하는 변환)
+                        screen_x1 = orig_x1 * scale + dx
+                        screen_y1 = orig_y1 * scale + dy
+                        screen_x2 = orig_x2 * scale + dx
+                        screen_y2 = orig_y2 * scale + dy
+                        
+                        # 3. 화면 좌표를 프레임 크기에 맞게 스케일링
+                        # 프레임 크기와 화면 크기의 비율 계산
+                        frame_scale_x = frame_w / view_width
+                        frame_scale_y = frame_h / view_height
+                        
+                        # 프레임 좌표로 변환
+                        x1 = int(screen_x1 * frame_scale_x)
+                        y1 = int(screen_y1 * frame_scale_y)
+                        x2 = int(screen_x2 * frame_scale_x)
+                        y2 = int(screen_y2 * frame_scale_y)
+                        
+                        print(f"  [DINO Server] 도어 {part.upper()} 크롭 좌표 (화면 변환 적용):")
+                        print(f"    YOLO 정규화 좌표: left={norm_left:.6f}, top={norm_top:.6f}, right={norm_right:.6f}, bottom={norm_bottom:.6f}")
+                        print(f"    원본 이미지 좌표: ({orig_x1:.2f}, {orig_y1:.2f}, {orig_x2:.2f}, {orig_y2:.2f})")
+                        print(f"    화면 좌표: ({screen_x1:.2f}, {screen_y1:.2f}, {screen_x2:.2f}, {screen_y2:.2f})")
+                        print(f"    프레임 좌표: ({x1}, {y1}, {x2}, {y2})")
+                    else:
+                        # 화면 변환 정보가 없으면 기존 방식 사용
+                        x1_float = norm_left * frame_w
+                        y1_float = norm_top * frame_h
+                        x2_float = norm_right * frame_w
+                        y2_float = norm_bottom * frame_h
+                        
+                        x1 = int(x1_float)
+                        y1 = int(y1_float)
+                        x2 = int(x2_float)
+                        y2 = int(y2_float)
+                        
+                        print(f"  [DINO Server] 도어 {part.upper()} 크롭 좌표 (기본 변환):")
+                        print(f"    YOLO 정규화 좌표: left={norm_left:.6f}, top={norm_top:.6f}, right={norm_right:.6f}, bottom={norm_bottom:.6f}")
+                        print(f"    프레임 크기: {frame_w}x{frame_h}")
+                        print(f"    계산(float): x1={x1_float:.2f}, y1={y1_float:.2f}, x2={x2_float:.2f}, y2={y2_float:.2f}")
+                        print(f"    변환된 픽셀 좌표: ({x1}, {y1}, {x2}, {y2})")
+                    
+                    # 이미지 경계 확인 및 보정
+                    x1 = max(0, min(x1, frame_w - 1))
+                    y1 = max(0, min(y1, frame_h - 1))
+                    x2 = max(x1 + 1, min(x2, frame_w))
+                    y2 = max(y1 + 1, min(y2, frame_h))
+                    
+                    print(f"    경계 보정 후: ({x1}, {y1}, {x2}, {y2})")
                     
                     if x2 > x1 and y2 > y1:
+                        # NumPy 배열 슬라이싱으로 크롭 (flip 없이 원본 그대로)
                         cropped = frame[y1:y2, x1:x2]
                         if cropped.size > 0:
                             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # 밀리초 포함

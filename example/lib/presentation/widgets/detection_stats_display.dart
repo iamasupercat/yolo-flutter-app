@@ -22,23 +22,23 @@ class DetectionStatsDisplay extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'DETECTIONS: $detectionCount',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                'FPS: ${currentFps.toStringAsFixed(1)}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            'DETECTIONS: $detectionCount',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Text(
+            'FPS: ${currentFps.toStringAsFixed(1)}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
             ],
           ),
           if (elapsedTime != null && elapsedTime! > 0) ...[

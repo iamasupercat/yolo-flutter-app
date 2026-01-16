@@ -173,6 +173,10 @@ class DINOClient {
   /// [detections] YOLO 탐지 결과 리스트 (JSON으로 변환하여 전송)
   /// [modelType] 'bolt' 또는 'door'
   /// [filename] 저장할 파일명 (선택사항, 없으면 자동 생성)
+  /// [frameWidth] 캡처된 프레임 너비 (선택사항, 디버깅용)
+  /// [frameHeight] 캡처된 프레임 높이 (선택사항, 디버깅용)
+  /// [origWidth] YOLO 원본 이미지 너비 (선택사항, 화면 변환 재현용)
+  /// [origHeight] YOLO 원본 이미지 높이 (선택사항, 화면 변환 재현용)
   /// 
   /// Returns: 저장 결과 맵 (success, filepath, filename, size, cropped_files)
   Future<Map<String, dynamic>?> saveFrame(
@@ -180,6 +184,10 @@ class DINOClient {
     List<Map<String, dynamic>> detections,
     String modelType, {
     String? filename,
+    int? frameWidth,
+    int? frameHeight,
+    int? origWidth,
+    int? origHeight,
   }) async {
     try {
       final request = http.MultipartRequest(
@@ -203,6 +211,28 @@ class DINOClient {
       
       // 모델 타입 추가
       request.fields['model_type'] = modelType;
+      
+      // 프레임 크기 정보 추가 (디버깅 및 좌표 변환용)
+      if (frameWidth != null && frameHeight != null) {
+        request.fields['frame_width'] = frameWidth.toString();
+        request.fields['frame_height'] = frameHeight.toString();
+        print('  📐 프레임 크기 정보 전송: ${frameWidth}x${frameHeight}');
+      }
+      
+      // 원본 이미지 크기 정보 추가 (화면 변환 재현용)
+      if (origWidth != null && origHeight != null) {
+        request.fields['orig_width'] = origWidth.toString();
+        request.fields['orig_height'] = origHeight.toString();
+        print('  📐 원본 이미지 크기 정보 전송: ${origWidth}x${origHeight}');
+      }
+      
+      // 화면 크기 정보 추가 (화면 변환 재현용)
+      // 화면 크기는 프레임 크기와 동일하다고 가정 (실제로는 YOLOView의 크기를 전송해야 함)
+      if (frameWidth != null && frameHeight != null) {
+        request.fields['view_width'] = frameWidth.toString();
+        request.fields['view_height'] = frameHeight.toString();
+        print('  📐 화면 크기 정보 전송: ${frameWidth}x${frameHeight}');
+      }
       
       // YOLO 탐지 결과를 JSON으로 변환하여 전송
       // YOLOResult를 Map으로 변환 (정규화 좌표 포함)

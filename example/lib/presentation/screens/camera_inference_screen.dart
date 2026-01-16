@@ -85,31 +85,31 @@ class _CameraInferenceScreenState extends State<CameraInferenceScreen> {
               ),
               // 카메라가 정지되지 않았을 때만 오버레이 표시
               if (!isFrozen) ...[
-                CameraInferenceOverlay(
-                  controller: _controller,
-                  isLandscape: isLandscape,
-                ),
-                CameraLogoOverlay(
-                  controller: _controller,
-                  isLandscape: isLandscape,
-                ),
-                CameraControls(
-                  currentZoomLevel: _controller.currentZoomLevel,
-                  isFrontCamera: _controller.isFrontCamera,
-                  activeSlider: _controller.activeSlider,
-                  onZoomChanged: _controller.setZoomLevel,
-                  onSliderToggled: _controller.toggleSlider,
-                  onCameraFlipped: _controller.flipCamera,
-                  isLandscape: isLandscape,
-                ),
-                ThresholdSlider(
-                  activeSlider: _controller.activeSlider,
-                  confidenceThreshold: _controller.confidenceThreshold,
-                  iouThreshold: _controller.iouThreshold,
-                  numItemsThreshold: _controller.numItemsThreshold,
-                  onValueChanged: _controller.updateSliderValue,
-                  isLandscape: isLandscape,
-                ),
+              CameraInferenceOverlay(
+                controller: _controller,
+                isLandscape: isLandscape,
+              ),
+              CameraLogoOverlay(
+                controller: _controller,
+                isLandscape: isLandscape,
+              ),
+              CameraControls(
+                currentZoomLevel: _controller.currentZoomLevel,
+                isFrontCamera: _controller.isFrontCamera,
+                activeSlider: _controller.activeSlider,
+                onZoomChanged: _controller.setZoomLevel,
+                onSliderToggled: _controller.toggleSlider,
+                onCameraFlipped: _controller.flipCamera,
+                isLandscape: isLandscape,
+              ),
+              ThresholdSlider(
+                activeSlider: _controller.activeSlider,
+                confidenceThreshold: _controller.confidenceThreshold,
+                iouThreshold: _controller.iouThreshold,
+                numItemsThreshold: _controller.numItemsThreshold,
+                onValueChanged: _controller.updateSliderValue,
+                isLandscape: isLandscape,
+              ),
               ],
               // 카메라가 정지되고 결과가 있으면 결과 오버레이 표시
               if (isFrozen && result != null)
