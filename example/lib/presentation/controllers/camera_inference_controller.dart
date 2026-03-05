@@ -68,7 +68,7 @@ class CameraInferenceController extends ChangeNotifier {
   Uint8List? _frozenFrame;
   List<YOLOResult>? _frozenDetections; // 정지된 프레임의 탐지 결과
   String? _frozenFramePath; // 정지된 프레임 이미지 파일 경로
-  
+
   // Inspection result
   InspectionResult? _inspectionResult;
 
@@ -94,7 +94,8 @@ class CameraInferenceController extends ChangeNotifier {
   YOLOViewController get yoloController => _yoloController;
   bool get isCameraFrozen => _isCameraFrozen;
   Uint8List? get frozenFrame => _frozenFrame;
-  List<YOLOResult>? get frozenDetections => _frozenDetections; // 정지된 프레임의 YOLO 좌표
+  List<YOLOResult>? get frozenDetections =>
+      _frozenDetections; // 정지된 프레임의 YOLO 좌표
   String? get frozenFramePath => _frozenFramePath; // 정지된 프레임 이미지 파일 경로
   InspectionResult? get inspectionResult => _inspectionResult; // 검사 결과
   double? get elapsedTime => _inspectionService.getElapsedTime();
@@ -117,20 +118,20 @@ class CameraInferenceController extends ChangeNotifier {
       modelType: _selectedModel,
       debug: false,
     );
-    
+
     // DINO 서버 클라이언트 초기화 (기본값: PC IP 주소)
     // 실제 기기인 경우: http://192.168.0.198:5001 (포트 5000은 macOS ControlCenter가 사용 중)
     // Android 에뮬레이터인 경우: http://10.0.2.2:5001
     // 필요시 setDinoServerUrl()로 변경 가능
     setDinoServerUrl('http://192.168.0.198:5001');
   }
-  
+
   /// DINO 서버 URL 설정 (정지 프레임을 서버로 전송하려면 설정)
   void setDinoServerUrl(String url) {
     _dinoClient = DINOClient(baseUrl: url);
     print('✅ DINO 서버 URL 설정: $url');
   }
-  
+
   /// DINO 서버 클라이언트 가져오기
   DINOClient? get dinoClient => _dinoClient;
 
@@ -165,14 +166,16 @@ class CameraInferenceController extends ChangeNotifier {
 
     // 조건 확인 (live.py 참고)
     final conditionResult = _inspectionService.checkCondition(results);
-    
+
     if (conditionResult['satisfied'] == true) {
       // 조건 만족 후 2초 지났는지 확인
       if (_inspectionService.shouldInspect()) {
         // ⚠️ 중요: 현재 프레임의 탐지 결과를 즉시 저장 (프레임 캡처 전에!)
         // 이렇게 하면 captureFrame()이 호출될 때와 정확히 같은 시점의 탐지 결과를 사용할 수 있음
         _frozenDetections = List.from(results);
-        print('🔍 shouldInspect() = true, 현재 프레임의 탐지 결과 저장 완료: ${_frozenDetections!.length}개 객체');
+        print(
+          '🔍 shouldInspect() = true, 현재 프레임의 탐지 결과 저장 완료: ${_frozenDetections!.length}개 객체',
+        );
         print('🔍 _freezeCameraAndCapture 호출 시작...');
         // 이제 _freezeCameraAndCapture는 이미 저장된 _frozenDetections를 사용
         _freezeCameraAndCapture().catchError((error, stackTrace) {
@@ -292,10 +295,7 @@ class CameraInferenceController extends ChangeNotifier {
 
     if (!_isModelLoading && model != _selectedModel) {
       _selectedModel = model;
-      _inspectionService = InspectionService(
-        modelType: model,
-        debug: false,
-      );
+      _inspectionService = InspectionService(modelType: model, debug: false);
       _isCameraFrozen = false;
       _frozenFrame = null;
       _frozenDetections = null;
@@ -322,32 +322,36 @@ class CameraInferenceController extends ChangeNotifier {
     _isCameraFrozen = true;
     notifyListeners();
 
-    print('\n${'='*60}');
+    print('\n${'=' * 60}');
     print('📸 조건이 ${InspectionService.requiredDuration}초 이상 유지됨! 카메라 정지...');
-    print('${'='*60}\n');
+    print('${'=' * 60}\n');
 
     try {
       // ⚠️ 중요: _frozenDetections는 onDetectionResults에서 이미 저장됨
       // 이제 프레임을 캡처하면, 저장된 탐지 결과와 정확히 같은 시점의 프레임을 캡처함
       print('📋 1단계: 저장된 탐지 결과 확인 (${_frozenDetections!.length}개 객체)...');
-      
+
       // 각 탐지 결과의 좌표 정보 출력 (디버깅용)
       for (int i = 0; i < _frozenDetections!.length; i++) {
         final result = _frozenDetections![i];
         print('  객체 #${i + 1}:');
         print('    - 클래스: ${result.className} (인덱스: ${result.classIndex})');
         print('    - 신뢰도: ${(result.confidence * 100).toStringAsFixed(1)}%');
-        print('    - 픽셀 좌표: left=${result.boundingBox.left.toStringAsFixed(1)}, top=${result.boundingBox.top.toStringAsFixed(1)}, right=${result.boundingBox.right.toStringAsFixed(1)}, bottom=${result.boundingBox.bottom.toStringAsFixed(1)}');
-        print('    - 정규화 좌표: left=${result.normalizedBox.left.toStringAsFixed(3)}, top=${result.normalizedBox.top.toStringAsFixed(3)}, right=${result.normalizedBox.right.toStringAsFixed(3)}, bottom=${result.normalizedBox.bottom.toStringAsFixed(3)}');
+        print(
+          '    - 픽셀 좌표: left=${result.boundingBox.left.toStringAsFixed(1)}, top=${result.boundingBox.top.toStringAsFixed(1)}, right=${result.boundingBox.right.toStringAsFixed(1)}, bottom=${result.boundingBox.bottom.toStringAsFixed(1)}',
+        );
+        print(
+          '    - 정규화 좌표: left=${result.normalizedBox.left.toStringAsFixed(3)}, top=${result.normalizedBox.top.toStringAsFixed(3)}, right=${result.normalizedBox.right.toStringAsFixed(3)}, bottom=${result.normalizedBox.bottom.toStringAsFixed(3)}',
+        );
       }
-      
+
       // 2단계: 즉시 프레임 캡처 (탐지 결과와 동일한 시점의 프레임을 캡처)
       // _isCameraFrozen = true로 설정했으므로 onDetectionResults는 더 이상 호출되지 않음
-      // _frozenDetections는 onDetectionResults에서 이미 저장되었으므로, 
+      // _frozenDetections는 onDetectionResults에서 이미 저장되었으므로,
       // 이 시점에 captureFrame()을 호출하면 저장된 탐지 결과와 동일한 시점의 프레임을 캡처함
       print('📋 2단계: 프레임 캡처 시작 (저장된 탐지 결과와 동일 시점의 프레임 캡처)...');
       final frameBytes = await _yoloController.captureFrame();
-      
+
       // 프레임 크기 확인 및 저장 (서버로 전송하기 위해)
       int? frameWidth;
       int? frameHeight;
@@ -364,7 +368,7 @@ class CameraInferenceController extends ChangeNotifier {
       if (frameBytes != null) {
         _frozenFrame = frameBytes;
         print('✅ 프레임 캡처 완료: ${frameBytes.length} bytes');
-        
+
         print('📋 3단계: 정지된 프레임 로컬 저장 시작...');
         // 정지된 프레임을 파일로 저장
         _frozenFramePath = await _saveFrozenFrame(frameBytes);
@@ -373,7 +377,7 @@ class CameraInferenceController extends ChangeNotifier {
         } else {
           print('⚠️  정지된 프레임 저장 실패');
         }
-        
+
         print('📋 4단계: DINO 서버로 전송 시작...');
         // DINO 서버가 설정되어 있으면 서버로도 전송 (이미지 + YOLO 좌표)
         if (_dinoClient != null) {
@@ -418,18 +422,23 @@ class CameraInferenceController extends ChangeNotifier {
 
   /// 카메라 재시작 (필요한 경우)
   Future<void> restartCamera() async {
-      _isCameraFrozen = false;
-      _frozenFrame = null;
-      _frozenDetections = null;
-      _frozenFramePath = null;
-      _inspectionResult = null;
-      _inspectionService.reset();
-      await _yoloController.restartCamera();
-      notifyListeners();
-    }
-  
+    _isCameraFrozen = false;
+    _frozenFrame = null;
+    _frozenDetections = null;
+    _frozenFramePath = null;
+    _inspectionResult = null;
+    _inspectionService.reset();
+    await _yoloController.restartCamera();
+    notifyListeners();
+  }
+
   /// 검사 결과 저장
-  void _saveInspectionResult(bool isGood, String resultText, String details, {double? defectConfidence}) {
+  void _saveInspectionResult(
+    bool isGood,
+    String resultText,
+    String details, {
+    double? defectConfidence,
+  }) {
     _inspectionResult = InspectionResult(
       isGood: isGood,
       resultText: resultText,
@@ -439,7 +448,7 @@ class CameraInferenceController extends ChangeNotifier {
     );
     notifyListeners();
   }
-  
+
   /// 검사 결과 초기화
   void clearInspectionResult() {
     _inspectionResult = null;
@@ -450,33 +459,39 @@ class CameraInferenceController extends ChangeNotifier {
   Future<String?> _saveFrozenFrame(Uint8List frameBytes) async {
     try {
       final directory = await getApplicationDocumentsDirectory();
-      final timestamp = DateTime.now().toIso8601String()
+      final timestamp = DateTime.now()
+          .toIso8601String()
           .replaceAll(':', '-')
           .replaceAll('.', '-')
           .substring(0, 19); // YYYY-MM-DDTHH-MM-SS
-      
+
       final filename = 'frozen_frame_$timestamp.jpg';
       final file = File('${directory.path}/$filename');
       await file.writeAsBytes(frameBytes);
-      
+
       return file.path;
     } catch (e) {
       print('❌ 정지된 프레임 저장 중 오류: $e');
       return null;
     }
   }
-  
+
   /// 정지된 프레임을 DINO 서버로 전송 (이미지 + YOLO 좌표)
-  Future<void> _sendFrozenFrameToServer(Uint8List frameBytes, int? frameWidth, int? frameHeight) async {
+  Future<void> _sendFrozenFrameToServer(
+    Uint8List frameBytes,
+    int? frameWidth,
+    int? frameHeight,
+  ) async {
     if (_dinoClient == null || _frozenDetections == null) return;
-    
+
     try {
-      final timestamp = DateTime.now().toIso8601String()
+      final timestamp = DateTime.now()
+          .toIso8601String()
           .replaceAll(':', '-')
           .replaceAll('.', '-')
           .substring(0, 19);
       final filename = 'frozen_frame_$timestamp.jpg';
-      
+
       // YOLOResult를 Map으로 변환 (정규화 좌표 포함)
       final detectionsList = _frozenDetections!.map((result) {
         return {
@@ -497,7 +512,7 @@ class CameraInferenceController extends ChangeNotifier {
           },
         };
       }).toList();
-      
+
       // 원본 이미지 크기 추정 (boundingBox와 normalizedBox를 이용)
       // normalizedBox = boundingBox / origSize 이므로
       // origSize = boundingBox / normalizedBox
@@ -508,7 +523,7 @@ class CameraInferenceController extends ChangeNotifier {
         double maxBottom = 0;
         double maxNormRight = 0;
         double maxNormBottom = 0;
-        
+
         for (final result in _frozenDetections!) {
           if (result.boundingBox.right > maxRight) {
             maxRight = result.boundingBox.right;
@@ -519,21 +534,21 @@ class CameraInferenceController extends ChangeNotifier {
             maxNormBottom = result.normalizedBox.bottom;
           }
         }
-        
+
         if (maxNormRight > 0) {
           origWidth = (maxRight / maxNormRight).round();
         }
         if (maxNormBottom > 0) {
           origHeight = (maxBottom / maxNormBottom).round();
         }
-        
+
         print('  📐 추정된 원본 이미지 크기: ${origWidth}x${origHeight}');
       }
-      
+
       // 모델 타입 결정
       final modelType = _selectedModel == ModelType.bolt ? 'bolt' : 'door';
-      
-        print('📤 정지 프레임과 YOLO 좌표를 서버로 전송 중...');
+
+      print('📤 정지 프레임과 YOLO 좌표를 서버로 전송 중...');
       final result = await _dinoClient!.saveFrame(
         frameBytes!,
         detectionsList,
@@ -544,7 +559,7 @@ class CameraInferenceController extends ChangeNotifier {
         origWidth: origWidth,
         origHeight: origHeight,
       );
-      
+
       if (result != null && result['success'] == true) {
         print('✅ 서버 저장 완료: ${result['filepath']}');
         final croppedFiles = result['cropped_files'] as List<dynamic>?;
@@ -554,9 +569,10 @@ class CameraInferenceController extends ChangeNotifier {
             print('  - $file');
           }
         }
-        
+
         // DINO 분류 결과 출력
-        final classificationResults = result['classification_results'] as List<dynamic>?;
+        final classificationResults =
+            result['classification_results'] as List<dynamic>?;
         if (classificationResults != null && classificationResults.isNotEmpty) {
           print('\n📊 DINO 분류 결과:');
           for (final res in classificationResults) {
@@ -566,18 +582,22 @@ class CameraInferenceController extends ChangeNotifier {
             final defectConf = res['defect_confidence'] as double;
             final resultText = isDefect ? '불량' : '양품';
             final confDisplay = confidence[predClass] as double;
-            
+
             if (_selectedModel == ModelType.bolt) {
               final boltIndex = res['bolt_index'] as int? ?? 0;
               final frameName = res['frame_name'] as String? ?? 'unknown';
-              print('  볼트 #$boltIndex ($frameName): $resultText (신뢰도: ${(confDisplay * 100).toStringAsFixed(1)}%, 불량확률: ${(defectConf * 100).toStringAsFixed(1)}%)');
+              print(
+                '  볼트 #$boltIndex ($frameName): $resultText (신뢰도: ${(confDisplay * 100).toStringAsFixed(1)}%, 불량확률: ${(defectConf * 100).toStringAsFixed(1)}%)',
+              );
             } else {
               final part = res['part'] as String? ?? 'unknown';
-              print('  도어 ${part.toUpperCase()}: $resultText (신뢰도: ${(confDisplay * 100).toStringAsFixed(1)}%, 불량확률: ${(defectConf * 100).toStringAsFixed(1)}%)');
+              print(
+                '  도어 ${part.toUpperCase()}: $resultText (신뢰도: ${(confDisplay * 100).toStringAsFixed(1)}%, 불량확률: ${(defectConf * 100).toStringAsFixed(1)}%)',
+              );
             }
           }
         }
-        
+
         // 최종 판정 결과
         final finalResult = result['final_result'] as Map<String, dynamic>?;
         if (finalResult != null) {
@@ -585,11 +605,11 @@ class CameraInferenceController extends ChangeNotifier {
           final resultText = finalResult['result_text'] as String;
           final avgDefectConf = finalResult['avg_defect_confidence'] as double;
           final votingMethod = finalResult['voting_method'] as String;
-          
+
           print('\n📊 최종 판정 (${votingMethod.toUpperCase()} Voting):');
           print('  평균 불량 확률: ${(avgDefectConf * 100).toStringAsFixed(1)}%');
           print('  결과: ${isGood ? '✅ 양품' : '❌ 불량'}');
-          
+
           // UI에 최종 결과 표시
           _saveInspectionResult(
             isGood,
@@ -608,10 +628,10 @@ class CameraInferenceController extends ChangeNotifier {
   }
 
   /// 정지된 프레임 이미지에서 YOLO 좌표로 크롭
-  /// 
+  ///
   /// [detectionIndex] 크롭할 탐지 결과의 인덱스 (frozenDetections 리스트의 인덱스)
   /// [savePath] 크롭된 이미지를 저장할 경로 (null이면 자동 생성)
-  /// 
+  ///
   /// Returns: 크롭된 이미지 파일 경로 또는 null
   Future<String?> cropFrozenFrameByDetection({
     required int detectionIndex,
@@ -629,14 +649,9 @@ class CameraInferenceController extends ChangeNotifier {
 
     final detection = _frozenDetections![detectionIndex];
     final bbox = detection.boundingBox;
-    
+
     // 바운딩 박스 좌표를 리스트로 변환 [x1, y1, x2, y2]
-    final bboxList = [
-      bbox.left,
-      bbox.top,
-      bbox.right,
-      bbox.bottom,
-    ];
+    final bboxList = [bbox.left, bbox.top, bbox.right, bbox.bottom];
 
     // InspectionService의 cropImage 메서드 사용
     final croppedBytes = await _inspectionService.cropImage(
@@ -653,16 +668,18 @@ class CameraInferenceController extends ChangeNotifier {
     // 크롭된 이미지 저장
     try {
       final directory = await getApplicationDocumentsDirectory();
-      final timestamp = DateTime.now().toIso8601String()
+      final timestamp = DateTime.now()
+          .toIso8601String()
           .replaceAll(':', '-')
           .replaceAll('.', '-')
           .substring(0, 19);
-      
-      final filename = savePath ?? 
+
+      final filename =
+          savePath ??
           'cropped_${detection.className}_${detectionIndex}_$timestamp.png';
       final file = File('${directory.path}/$filename');
       await file.writeAsBytes(croppedBytes);
-      
+
       print('✅ 크롭된 이미지 저장 완료: ${file.path}');
       return file.path;
     } catch (e) {
@@ -672,7 +689,7 @@ class CameraInferenceController extends ChangeNotifier {
   }
 
   /// 정지된 프레임의 모든 탐지 결과를 크롭하여 저장
-  /// 
+  ///
   /// Returns: 크롭된 이미지 파일 경로 리스트
   Future<List<String>> cropAllFrozenDetections() async {
     if (_frozenDetections == null || _frozenDetections!.isEmpty) {
@@ -681,7 +698,7 @@ class CameraInferenceController extends ChangeNotifier {
     }
 
     final croppedPaths = <String>[];
-    
+
     for (int i = 0; i < _frozenDetections!.length; i++) {
       final path = await cropFrozenFrameByDetection(detectionIndex: i);
       if (path != null) {
