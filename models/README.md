@@ -19,6 +19,7 @@ DINO 서버는 YOLO 탐지 후 크롭된 이미지를 분류하기 위해 실행
 ### Flutter 앱 실행
 
 Flutter 앱이 실행되면:
+
 1. YOLO로 실시간 탐지
 2. 조건 만족 시 프레임 캡처
 3. 바운딩 박스 좌표로 이미지 크롭
@@ -34,4 +35,3 @@ controller.setDinoServerUrl('http://10.0.2.2:5000');
 // 실제 기기인 경우 (PC의 IP 주소)
 controller.setDinoServerUrl('http://192.168.0.100:5000');
 ```
-
