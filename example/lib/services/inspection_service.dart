@@ -15,24 +15,21 @@ class InspectionService {
   final ModelType modelType;
   final bool debug;
   String? _debugCropDir;
-  
+
   // Condition tracking (similar to live.py)
   DateTime? _conditionStartTime;
   bool _conditionMet = false;
   static const double requiredDuration = 2.0; // 2 seconds
-  
-  InspectionService({
-    required this.modelType,
-    this.debug = false,
-  });
-  
+
+  InspectionService({required this.modelType, this.debug = false});
+
   /// Initialize debug directory (similar to live.py)
   /// Must be called before using debug features
-  /// 
+  ///
   /// PC에서 볼 수 있도록 외부 저장소(Download 폴더)에 debug_crop 폴더 생성
   Future<void> initializeDebugDir() async {
     if (!debug) return;
-    
+
     try {
       if (Platform.isAndroid) {
         // Android: 외부 저장소의 Download 폴더 사용 (PC에서 볼 수 있음)
@@ -46,12 +43,12 @@ class InspectionService {
         final directory = await getApplicationDocumentsDirectory();
         _debugCropDir = '${directory.path}/debug_crop';
       }
-      
+
       final dir = Directory(_debugCropDir!);
       if (!await dir.exists()) {
         await dir.create(recursive: true);
       }
-      
+
       // 하위 폴더 생성 (bolt, door)
       final boltDir = Directory('$_debugCropDir/bolt');
       final doorDir = Directory('$_debugCropDir/door');
@@ -61,7 +58,7 @@ class InspectionService {
       if (!await doorDir.exists()) {
         await doorDir.create(recursive: true);
       }
-      
+
       print('  - 디버그 크롭 이미지 저장 경로: $_debugCropDir/');
       print('    - 볼트: $_debugCropDir/bolt/');
       print('    - 도어: $_debugCropDir/door/');
@@ -90,27 +87,24 @@ class InspectionService {
       }
     }
   }
-  
+
   /// Check if condition is satisfied (similar to live.py's _check_condition)
   /// Returns: (conditionSatisfied, detections)
   Map<String, dynamic> checkCondition(List<YOLOResult> results) {
     if (results.isEmpty) {
       _resetCondition();
-      return {
-        'satisfied': false,
-        'detections': _getEmptyDetections(),
-      };
+      return {'satisfied': false, 'detections': _getEmptyDetections()};
     }
-    
+
     bool satisfied = false;
     Map<String, dynamic> detections = {};
-    
+
     if (modelType == ModelType.bolt) {
       satisfied = _checkBoltCondition(results, detections);
     } else if (modelType == ModelType.door) {
       satisfied = _checkDoorCondition(results, detections);
     }
-    
+
     if (satisfied) {
       if (!_conditionMet) {
         _conditionMet = true;
@@ -123,46 +117,47 @@ class InspectionService {
         _resetCondition();
       }
     }
-    
-    return {
-      'satisfied': satisfied,
-      'detections': detections,
-    };
+
+    return {'satisfied': satisfied, 'detections': detections};
   }
-  
+
   /// Check if condition has been met for required duration
   bool shouldInspect() {
     if (!_conditionMet || _conditionStartTime == null) {
       return false;
     }
-    
-    final elapsed = DateTime.now().difference(_conditionStartTime!).inMilliseconds / 1000.0;
+
+    final elapsed =
+        DateTime.now().difference(_conditionStartTime!).inMilliseconds / 1000.0;
     final shouldInspect = elapsed >= requiredDuration;
-    
+
     // 디버깅 로그 (타이머 진행 상황)
     if (!shouldInspect && elapsed > 0.5) {
       // 0.5초마다 로그 출력 (너무 많이 출력되지 않도록)
       if ((elapsed * 2).round() % 1 == 0) {
-        print('  [타이머] ${elapsed.toStringAsFixed(1)}s / ${requiredDuration}s (모델: ${modelType == ModelType.bolt ? '볼트' : '도어'})');
+        print(
+          '  [타이머] ${elapsed.toStringAsFixed(1)}s / ${requiredDuration}s (모델: ${modelType == ModelType.bolt ? '볼트' : '도어'})',
+        );
       }
     }
-    
+
     return shouldInspect;
   }
-  
+
   /// Get elapsed time since condition was met
   double getElapsedTime() {
     if (!_conditionMet || _conditionStartTime == null) {
       return 0.0;
     }
-    return DateTime.now().difference(_conditionStartTime!).inMilliseconds / 1000.0;
+    return DateTime.now().difference(_conditionStartTime!).inMilliseconds /
+        1000.0;
   }
-  
+
   void _resetCondition() {
     _conditionMet = false;
     _conditionStartTime = null;
   }
-  
+
   Map<String, dynamic> _getEmptyDetections() {
     if (modelType == ModelType.bolt) {
       return {'bolts': [], 'frames': []};
@@ -170,12 +165,15 @@ class InspectionService {
       return {'high': [], 'mid': [], 'low': []};
     }
   }
-  
+
   /// Check bolt condition (similar to live.py's _check_bolt_condition)
-  bool _checkBoltCondition(List<YOLOResult> results, Map<String, dynamic> detections) {
+  bool _checkBoltCondition(
+    List<YOLOResult> results,
+    Map<String, dynamic> detections,
+  ) {
     List<Map<String, dynamic>> boltDetections = [];
     List<Map<String, dynamic>> frameDetections = [];
-    
+
     for (final result in results) {
       final detection = {
         'classIndex': result.classIndex,
@@ -191,7 +189,7 @@ class InspectionService {
           (result.boundingBox.top + result.boundingBox.bottom) / 2,
         ],
       };
-      
+
       // Class IDs: 0,1 = bolts, 2-7 = frames
       if (result.classIndex == 0 || result.classIndex == 1) {
         boltDetections.add(detection);
@@ -199,22 +197,25 @@ class InspectionService {
         frameDetections.add(detection);
       }
     }
-    
+
     detections['bolts'] = boltDetections;
     detections['frames'] = frameDetections;
-    
+
     // Condition: exactly 1 frame detected
     return frameDetections.length == 1;
   }
-  
+
   /// Check door condition (similar to live.py's _check_frontdoor_condition)
-  bool _checkDoorCondition(List<YOLOResult> results, Map<String, dynamic> detections) {
+  bool _checkDoorCondition(
+    List<YOLOResult> results,
+    Map<String, dynamic> detections,
+  ) {
     Map<String, List<Map<String, dynamic>>> parts = {
       'high': [],
       'mid': [],
       'low': [],
     };
-    
+
     for (final result in results) {
       final className = result.className.toLowerCase();
       if (parts.containsKey(className)) {
@@ -230,32 +231,36 @@ class InspectionService {
         });
       }
     }
-    
+
     detections['high'] = parts['high']!;
     detections['mid'] = parts['mid']!;
     detections['low'] = parts['low']!;
-    
+
     // Condition: all three parts OR high + low (without mid)
-    final hasAllThree = parts['high']!.length == 1 &&
-                        parts['mid']!.length == 1 &&
-                        parts['low']!.length == 1;
-    final hasHighLow = parts['high']!.length == 1 &&
-                       parts['low']!.length == 1 &&
-                       parts['mid']!.isEmpty;
-    
+    final hasAllThree =
+        parts['high']!.length == 1 &&
+        parts['mid']!.length == 1 &&
+        parts['low']!.length == 1;
+    final hasHighLow =
+        parts['high']!.length == 1 &&
+        parts['low']!.length == 1 &&
+        parts['mid']!.isEmpty;
+
     final satisfied = hasAllThree || hasHighLow;
-    
+
     // 디버깅 로그 추가
     if (satisfied) {
-      print('  [도어 조건] 만족: high=${parts['high']!.length}, mid=${parts['mid']!.length}, low=${parts['low']!.length}');
+      print(
+        '  [도어 조건] 만족: high=${parts['high']!.length}, mid=${parts['mid']!.length}, low=${parts['low']!.length}',
+      );
     }
-    
+
     return satisfied;
   }
-  
+
   /// Crop image based on bounding box coordinates
   /// Similar to live.py's _crop_obb_object or simple crop
-  /// 
+  ///
   /// [imageBytes] 원본 이미지 바이트
   /// [bbox] 바운딩 박스 좌표 [x1, y1, x2, y2]
   /// [debugLabel] 디버그 모드일 때 파일명에 사용할 라벨 (예: 'bolt_1', 'door_high')
@@ -269,13 +274,13 @@ class InspectionService {
       final codec = await ui.instantiateImageCodec(imageBytes);
       final frame = await codec.getNextFrame();
       final image = frame.image;
-      
+
       // Get bounding box coordinates
       final x1 = bbox[0].toInt();
       final y1 = bbox[1].toInt();
       final x2 = bbox[2].toInt();
       final y2 = bbox[3].toInt();
-      
+
       // Ensure valid coordinates
       final width = image.width;
       final height = image.height;
@@ -283,40 +288,50 @@ class InspectionService {
       final cropY = y1.clamp(0, height);
       final cropW = (x2 - x1).clamp(1, width - cropX);
       final cropH = (y2 - y1).clamp(1, height - cropY);
-      
+
       // Crop image
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
       canvas.drawImageRect(
         image,
-        Rect.fromLTWH(cropX.toDouble(), cropY.toDouble(), cropW.toDouble(), cropH.toDouble()),
+        Rect.fromLTWH(
+          cropX.toDouble(),
+          cropY.toDouble(),
+          cropW.toDouble(),
+          cropH.toDouble(),
+        ),
         Rect.fromLTWH(0, 0, cropW.toDouble(), cropH.toDouble()),
         Paint(),
       );
-      
+
       final picture = recorder.endRecording();
       final croppedImage = await picture.toImage(cropW, cropH);
-      final byteData = await croppedImage.toByteData(format: ui.ImageByteFormat.png);
-      
+      final byteData = await croppedImage.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+
       image.dispose();
       croppedImage.dispose();
-      
+
       final croppedBytes = byteData?.buffer.asUint8List();
-      
+
       // Debug: Save cropped image (similar to live.py)
-      if (debug && _debugCropDir != null && croppedBytes != null && debugLabel != null) {
+      if (debug &&
+          _debugCropDir != null &&
+          croppedBytes != null &&
+          debugLabel != null) {
         await _saveDebugCrop(croppedBytes, debugLabel, cropW, cropH);
       }
-      
+
       return croppedBytes;
     } catch (e) {
       print('Error cropping image: $e');
       return null;
     }
   }
-  
+
   /// Save cropped image for debugging (similar to live.py)
-  /// 
+  ///
   /// [label] 'bolt_1', 'door_high' 등의 라벨
   /// label이 'bolt'로 시작하면 bolt 폴더에, 'door'로 시작하면 door 폴더에 저장
   Future<void> _saveDebugCrop(
@@ -326,19 +341,23 @@ class InspectionService {
     int height,
   ) async {
     if (_debugCropDir == null) return;
-    
+
     try {
-      final timestamp = DateTime.now().toIso8601String()
+      final timestamp = DateTime.now()
+          .toIso8601String()
           .replaceAll(':', '-')
           .replaceAll('.', '-')
           .substring(0, 19); // YYYY-MM-DDTHH-MM-SS
-      
+
       // label에 따라 하위 폴더 결정
       String subFolder;
       String fileName;
       if (label.startsWith('bolt')) {
         subFolder = 'bolt';
-        fileName = label.replaceFirst('bolt_', ''); // 'bolt_1_sedan' -> '1_sedan'
+        fileName = label.replaceFirst(
+          'bolt_',
+          '',
+        ); // 'bolt_1_sedan' -> '1_sedan'
       } else if (label.startsWith('door')) {
         subFolder = 'door';
         fileName = label.replaceFirst('door_', ''); // 'door_high' -> 'high'
@@ -346,20 +365,19 @@ class InspectionService {
         subFolder = 'other';
         fileName = label;
       }
-      
+
       final filename = '$_debugCropDir/$subFolder/${fileName}_$timestamp.png';
       final file = File(filename);
       await file.writeAsBytes(croppedBytes);
-      
+
       print('  크롭 이미지 저장: $filename (크기: ${width}x${height})');
     } catch (e) {
       print('⚠️  크롭 이미지 저장 실패: $e');
     }
   }
-  
+
   /// Reset inspection state
   void reset() {
     _resetCondition();
   }
 }
-
