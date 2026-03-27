@@ -23,8 +23,8 @@ class InspectionResultOverlay extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: result.isGood 
-              ? Colors.green.withOpacity(0.95) 
+          color: result.isGood
+              ? Colors.green.withOpacity(0.95)
               : Colors.red.withOpacity(0.95),
           boxShadow: [
             BoxShadow(
@@ -44,7 +44,7 @@ class InspectionResultOverlay extends StatelessWidget {
               color: Colors.white,
             ),
             const SizedBox(height: 16),
-            
+
             // Result text
             Text(
               result.isGood ? '✅ 양품' : '❌ 불량',
@@ -55,30 +55,24 @@ class InspectionResultOverlay extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            
+
             // Details
             if (result.details != null) ...[
               Text(
                 result.details!,
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.white70,
-                ),
+                style: const TextStyle(fontSize: 16, color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
             ],
-            
+
             // Timestamp
             Text(
               '검사 시간: ${_formatTime(result.timestamp)}',
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.white60,
-              ),
+              style: const TextStyle(fontSize: 12, color: Colors.white60),
             ),
             const SizedBox(height: 24),
-            
+
             // Restart button
             SizedBox(
               width: double.infinity,
@@ -86,7 +80,9 @@ class InspectionResultOverlay extends StatelessWidget {
                 onPressed: onRestart,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
-                  foregroundColor: result.isGood ? Colors.green.shade900 : Colors.red.shade900,
+                  foregroundColor: result.isGood
+                      ? Colors.green.shade900
+                      : Colors.red.shade900,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -94,10 +90,7 @@ class InspectionResultOverlay extends StatelessWidget {
                 ),
                 child: const Text(
                   '다시 검사',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
@@ -106,10 +99,9 @@ class InspectionResultOverlay extends StatelessWidget {
       ),
     );
   }
-  
+
   String _formatTime(DateTime time) {
     return '${time.year}-${time.month.toString().padLeft(2, '0')}-${time.day.toString().padLeft(2, '0')} '
-           '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:${time.second.toString().padLeft(2, '0')}';
+        '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:${time.second.toString().padLeft(2, '0')}';
   }
 }
-
