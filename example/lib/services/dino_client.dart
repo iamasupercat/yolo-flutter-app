@@ -11,19 +11,19 @@ import 'package:http/http.dart' as http;
 class DINOClient {
   final String baseUrl;
   final Duration timeout;
-  
+
   DINOClient({
     required this.baseUrl,
     this.timeout = const Duration(seconds: 10),
   });
-  
+
   /// 서버 상태 확인 및 자동 시작 시도
   Future<bool> checkHealth({bool autoStart = true}) async {
     try {
       final response = await http
           .get(Uri.parse('$baseUrl/health'))
           .timeout(timeout);
-      
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return data['status'] == 'ok';
@@ -34,44 +34,46 @@ class DINOClient {
       return false;
     }
   }
-  
+
   /// 이미지를 224x224로 리사이즈
   Future<Uint8List> _resizeImage(Uint8List imageBytes, int targetSize) async {
     // 이미지 디코드
     final codec = await ui.instantiateImageCodec(imageBytes);
     final frame = await codec.getNextFrame();
     final image = frame.image;
-    
+
     // 224x224로 리사이즈
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
     final paint = ui.Paint()..filterQuality = ui.FilterQuality.high;
-    
+
     canvas.drawImageRect(
       image,
       ui.Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
       ui.Rect.fromLTWH(0, 0, targetSize.toDouble(), targetSize.toDouble()),
       paint,
     );
-    
+
     final picture = recorder.endRecording();
     final resizedImage = await picture.toImage(targetSize, targetSize);
-    final byteData = await resizedImage.toByteData(format: ui.ImageByteFormat.png);
-    
+    final byteData = await resizedImage.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+
     // 리소스 정리
     image.dispose();
     resizedImage.dispose();
     codec.dispose();
-    
+
     return byteData!.buffer.asUint8List();
   }
-  
+
   /// 이미지 분류 요청
-  /// 
+  ///
   /// [imageBytes] 원본 크롭된 이미지 바이트 (서버에서 224x224로 리사이즈됨)
   /// [modelType] 'bolt', 'door_high', 'door_mid', 'door_low'
   /// [filenamePrefix] 서버에서 파일명 생성용 prefix (live.py 스타일)
-  /// 
+  ///
   /// Returns: 분류 결과 맵
   Future<Map<String, dynamic>?> classifyImage(
     Uint8List imageBytes,
@@ -84,30 +86,30 @@ class DINOClient {
         'POST',
         Uri.parse('$baseUrl/classify'),
       );
-      
+
       // 원본 이미지 파일 추가 (서버에서 224x224로 리사이즈)
       request.files.add(
         http.MultipartFile.fromBytes(
           'image',
-          imageBytes,  // 원본 크롭 이미지 (리사이즈 전)
+          imageBytes, // 원본 크롭 이미지 (리사이즈 전)
           filename: 'cropped_image.png',
         ),
       );
-      
+
       // 모델 타입 추가
       request.fields['model_type'] = modelType;
       request.fields['format'] = 'binary';
-      
+
       // 파일명 prefix 추가 (서버에서 파일명 생성용)
       // live.py 스타일: bolt_{i+1}_{frame_name} 또는 door_{part}
       if (filenamePrefix != null) {
         request.fields['filename_prefix'] = filenamePrefix;
       }
-      
+
       // 요청 전송
       final streamedResponse = await request.send().timeout(timeout);
       final response = await http.Response.fromStream(streamedResponse);
-      
+
       if (response.statusCode == 200) {
         if (response.body.isEmpty) {
           print('DINO 서버 응답이 비어있습니다.');
@@ -132,7 +134,7 @@ class DINOClient {
       return null;
     }
   }
-  
+
   /// Base64 인코딩된 이미지로 분류 요청 (대안)
   Future<Map<String, dynamic>?> classifyImageBase64(
     Uint8List imageBytes,
@@ -140,7 +142,7 @@ class DINOClient {
   ) async {
     try {
       final base64Image = base64Encode(imageBytes);
-      
+
       final response = await http
           .post(
             Uri.parse('$baseUrl/classify'),
@@ -152,7 +154,7 @@ class DINOClient {
             }),
           )
           .timeout(timeout);
-      
+
       if (response.statusCode == 200) {
         final result = json.decode(response.body) as Map<String, dynamic>;
         return result;
@@ -166,9 +168,9 @@ class DINOClient {
       return null;
     }
   }
-  
+
   /// 정지된 프레임 이미지를 서버에 저장하고 YOLO 좌표로 크롭
-  /// 
+  ///
   /// [imageBytes] 정지된 프레임 이미지 바이트
   /// [detections] YOLO 탐지 결과 리스트 (JSON으로 변환하여 전송)
   /// [modelType] 'bolt' 또는 'door'
@@ -177,7 +179,7 @@ class DINOClient {
   /// [frameHeight] 캡처된 프레임 높이 (선택사항, 디버깅용)
   /// [origWidth] YOLO 원본 이미지 너비 (선택사항, 화면 변환 재현용)
   /// [origHeight] YOLO 원본 이미지 높이 (선택사항, 화면 변환 재현용)
-  /// 
+  ///
   /// Returns: 저장 결과 맵 (success, filepath, filename, size, cropped_files)
   Future<Map<String, dynamic>?> saveFrame(
     Uint8List imageBytes,
@@ -194,7 +196,7 @@ class DINOClient {
         'POST',
         Uri.parse('$baseUrl/save_frame'),
       );
-      
+
       // 이미지 파일 추가
       request.files.add(
         http.MultipartFile.fromBytes(
@@ -203,29 +205,29 @@ class DINOClient {
           filename: filename ?? 'frozen_frame.jpg',
         ),
       );
-      
+
       // 파일명 추가 (선택사항)
       if (filename != null) {
         request.fields['filename'] = filename;
       }
-      
+
       // 모델 타입 추가
       request.fields['model_type'] = modelType;
-      
+
       // 프레임 크기 정보 추가 (디버깅 및 좌표 변환용)
       if (frameWidth != null && frameHeight != null) {
         request.fields['frame_width'] = frameWidth.toString();
         request.fields['frame_height'] = frameHeight.toString();
         print('  📐 프레임 크기 정보 전송: ${frameWidth}x${frameHeight}');
       }
-      
+
       // 원본 이미지 크기 정보 추가 (화면 변환 재현용)
       if (origWidth != null && origHeight != null) {
         request.fields['orig_width'] = origWidth.toString();
         request.fields['orig_height'] = origHeight.toString();
         print('  📐 원본 이미지 크기 정보 전송: ${origWidth}x${origHeight}');
       }
-      
+
       // 화면 크기 정보 추가 (화면 변환 재현용)
       // 화면 크기는 프레임 크기와 동일하다고 가정 (실제로는 YOLOView의 크기를 전송해야 함)
       if (frameWidth != null && frameHeight != null) {
@@ -233,7 +235,7 @@ class DINOClient {
         request.fields['view_height'] = frameHeight.toString();
         print('  📐 화면 크기 정보 전송: ${frameWidth}x${frameHeight}');
       }
-      
+
       // YOLO 탐지 결과를 JSON으로 변환하여 전송
       // YOLOResult를 Map으로 변환 (정규화 좌표 포함)
       final detectionsList = detections.map((det) {
@@ -259,16 +261,16 @@ class DINOClient {
         }
         return detection;
       }).toList();
-      
+
       request.fields['detections'] = json.encode(detectionsList);
-      
+
       // 요청 전송
       print('  📡 서버 연결 시도: $baseUrl/save_frame');
       print('  📦 전송 데이터 크기: ${imageBytes.length} bytes');
       print('  📋 탐지 결과 개수: ${detections.length}개');
       final streamedResponse = await request.send().timeout(timeout);
       final response = await http.Response.fromStream(streamedResponse);
-      
+
       if (response.statusCode == 200) {
         if (response.body.isEmpty) {
           print('DINO 서버 응답이 비어있습니다.');
@@ -318,4 +320,3 @@ class DINOClient {
     }
   }
 }
-
